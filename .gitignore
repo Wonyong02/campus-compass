@@ -19,3 +19,4 @@ my_agent/campus_events_final.json
 
 # OS cruft
 .DS_Store
+my_agent/events.db
