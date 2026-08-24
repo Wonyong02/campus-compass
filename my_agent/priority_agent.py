@@ -40,6 +40,52 @@ def build_agent() -> Agent:
     return Agent(system_prompt=PRIORITY_SYSTEM_PROMPT)
 
 
+def _extract_json_array(text: str) -> str:
+    """Pulls the first balanced top-level [...] block out of the agent's raw
+    response, ignoring brackets that appear inside quoted strings (e.g. a
+    "reason" like "See [1] for details" won't throw off the count).
+
+    The old version just did text.find("[") / text.rfind("]") -- a naive
+    find/rfind pair. That mostly worked when the agent behaved, but breaks
+    in a few real ways: an empty/no-bracket response slices to "" and
+    json.loads("") raises an opaque "Expecting value" error with no hint of
+    what actually came back; a response with any stray "]" after the array
+    (e.g. the model added a trailing note) gets silently included in the
+    slice; and there's no useful error message either way to debug from.
+
+    Raises ValueError with a snippet of the actual response on failure, so a
+    parsing problem is diagnosable from the /api/rerank 502 body alone
+    instead of just "Expecting value: line 1 column 1 (char 0)".
+    """
+    start = text.find("[")
+    if start == -1:
+        raise ValueError(f"agent response contained no JSON array at all -- raw response: {text[:500]!r}")
+
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+
+    raise ValueError(f"agent response had an unclosed JSON array (unbalanced brackets) -- raw response: {text[:500]!r}")
+
+
 def build_agent_input(raw_events: list[dict]) -> tuple[list[dict], dict[int, dict]]:
     """Turns raw scraped(+geocoded) events into the trimmed shape the agent
     expects (id, title, date, time, location, description capped at 300
@@ -89,9 +135,14 @@ def prioritize_events(student_profile: dict, events: list[dict]) -> list[dict]:
     response = agent(prompt)
     raw_text = str(response)
 
-    start = raw_text.find("[")
-    end = raw_text.rfind("]") + 1
-    return json.loads(raw_text[start:end])
+    array_text = _extract_json_array(raw_text)
+    try:
+        return json.loads(array_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"agent response looked like a JSON array but failed to parse ({e}) -- "
+            f"extracted text: {array_text[:500]!r}"
+        ) from e
 
 
 if __name__ == "__main__":
