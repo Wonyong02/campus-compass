@@ -157,6 +157,18 @@
     flex-shrink:0;
   }
   #applyProfileBtn:disabled{opacity:0.6;cursor:default;}
+  .forget-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    background:transparent;
+    color:#8B93A0;
+    border:1px solid #2E3D4E;
+    border-radius:8px;
+    padding:8px 10px;
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .forget-btn:hover{color:var(--paper);border-color:#465A70;}
 
   .ticker-wrap{
     background:#0F161E;
@@ -355,6 +367,7 @@
     </div>
     <div class="profile-panel-actions">
       <span id="profileStatus"></span>
+      <button class="forget-btn" id="forgetProfileBtn" type="button" title="Forget the profile saved on this browser">Forget</button>
       <button id="applyProfileBtn" type="button">Update priorities</button>
     </div>
   </div>
@@ -386,17 +399,30 @@
 
    Clicking "Edit profile" and "Update priorities" calls the
    Flask backend in app.py (POST /api/rerank), which re-runs the
-   Strands Agent's judgment against the SAME scraped events but a
-   NEW profile -- live, no re-running pipeline.py by hand. If the
-   backend isn't running, the page still works with the static
-   snapshot below; you just can't change the profile live.
-   See PROJECT_LOG.md section 11 for the backstory.
+   Strands Agent's judgment against events now persisted in
+   events.db (see db.py) for a NEW profile -- live, no re-running
+   pipeline.py by hand. If the backend isn't running, the page
+   still works with the static snapshot below; you just can't
+   change the profile live. See PROJECT_LOG.md section 11.
+
+   No login: the student's profile is saved to this browser's
+   localStorage (see STORAGE_KEY below), and re-applied
+   automatically next time they open the page. Setting your
+   categories once is the whole "account" -- see the project's
+   progress notes for why (Login is intentionally lower priority
+   than making the map fully usable without one).
 --------------------------------------------------------- */
 const BACKEND_URL = "http://localhost:5001";
-const INTEREST_OPTIONS = ["career", "academic", "transfer", "hackathon", "club", "sports", "art", "social", "international"];
+const STORAGE_KEY = "campusCompassProfile";
+let INTEREST_OPTIONS = ["career", "academic", "transfer", "hackathon", "club", "sports", "art", "social", "international"];
 
 let GENERATED_AT = "2026-08-23T18:53:16.523889";
 let STUDENT_PROFILE = { year: "sophomore", major: "Computer Science", interests: ["career", "academic"] };
+// True only once the student has actually clicked a chip themselves in this
+// page load. Keeps renderInterestChips() from "preserving" a stale render
+// (e.g. fetchRealCategories()'s fast /api/categories call finishing before
+// tryAutoPersonalize()'s slower /api/rerank call restores the real profile).
+let userEditedInterests = false;
 const CAMPUS_CENTER = [37.3192806, -122.0447919];
 
 let EVENTS = [
@@ -451,6 +477,15 @@ function renderProfileBanner(){
   const interestList = STUDENT_PROFILE.interests.length ? STUDENT_PROFILE.interests.join(", ") : "no interests set";
   const generatedDate = new Date(GENERATED_AT).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   el.innerHTML = `Personalized for <strong>${capitalize(STUDENT_PROFILE.year)} · ${STUDENT_PROFILE.major}</strong> (${interestList}) · generated ${generatedDate}`;
+}
+
+/* Shown the instant we know there's a saved profile to restore, since the
+   real /api/rerank call behind tryAutoPersonalize() can take several
+   seconds (real Bedrock/Strands Agent latency, not a bug) -- without this
+   the page just sits on the static snapshot and looks stuck/reverted. */
+function showPersonalizingBanner(){
+  const el = document.getElementById("profileBanner");
+  el.innerHTML = `<span style="opacity:0.8;">Personalizing your map for your saved profile…</span>`;
 }
 
 function initMap(){
@@ -528,22 +563,92 @@ function renderData(){
   document.getElementById("tickerTrack").innerHTML = tickerItems + '<span class="sep">//</span>' + tickerItems;
 }
 
+/* ---------------- no-login profile persistence (localStorage) ---------------- */
+
+function loadStoredProfile(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.warn("Couldn't read saved profile:", err);
+    return null;
+  }
+}
+
+function saveStoredProfile(profile){
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+  } catch (err) {
+    console.warn("Couldn't save profile locally:", err);
+  }
+}
+
+function clearStoredProfile(){
+  try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* ignore */ }
+}
+
+/* ---------------- talking to the backend ---------------- */
+
+async function requestRerank(profile){
+  const res = await fetch(`${BACKEND_URL}/api/rerank`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(profile),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Server returned ${res.status}`);
+  }
+  return res.json();
+}
+
+async function fetchRealCategories(){
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/categories`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const merged = new Set(INTEREST_OPTIONS);
+    (data.categories || []).forEach(c => merged.add(c));
+    INTEREST_OPTIONS = Array.from(merged);
+    renderInterestChips();
+  } catch (err) {
+    // backend not running yet -- keep the generic fallback list, no big deal
+    console.warn("Couldn't load real categories, using generic list:", err.message);
+  }
+}
+
 /* ---------------- profile panel wiring ---------------- */
 
-function initProfilePanel(){
-  document.getElementById("inputYear").value = STUDENT_PROFILE.year;
-  document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
-
+function renderInterestChips(){
   const chipsWrap = document.getElementById("interestChips");
+  // Only trust the chips currently lit up in the DOM if the student actually
+  // clicked one themselves. Otherwise always derive from STUDENT_PROFILE --
+  // this is what stops an earlier automatic render (e.g. from
+  // fetchRealCategories(), which resolves fast) from "sticking" after
+  // tryAutoPersonalize() (slower) later updates STUDENT_PROFILE to the real
+  // saved interests.
+  const activeSet = userEditedInterests
+    ? new Set(Array.from(chipsWrap.querySelectorAll(".chip.active")).map(c => c.textContent))
+    : new Set(STUDENT_PROFILE.interests);
+
   chipsWrap.innerHTML = "";
   INTEREST_OPTIONS.forEach(tag => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "chip" + (STUDENT_PROFILE.interests.includes(tag) ? " active" : "");
+    chip.className = "chip" + (activeSet.has(tag) ? " active" : "");
     chip.textContent = tag;
-    chip.onclick = () => chip.classList.toggle("active");
+    chip.onclick = () => {
+      userEditedInterests = true;
+      chip.classList.toggle("active");
+    };
     chipsWrap.appendChild(chip);
   });
+}
+
+function initProfilePanel(){
+  document.getElementById("inputYear").value = STUDENT_PROFILE.year;
+  document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
+  renderInterestChips();
 
   document.getElementById("editProfileBtn").onclick = () => {
     document.getElementById("profilePanel").classList.toggle("hidden");
@@ -552,7 +657,7 @@ function initProfilePanel(){
   document.getElementById("applyProfileBtn").onclick = async () => {
     const year = document.getElementById("inputYear").value;
     const major = document.getElementById("inputMajor").value.trim();
-    const interests = Array.from(chipsWrap.querySelectorAll(".chip.active")).map(c => c.textContent);
+    const interests = Array.from(document.querySelectorAll("#interestChips .chip.active")).map(c => c.textContent);
     const statusEl = document.getElementById("profileStatus");
     const btn = document.getElementById("applyProfileBtn");
 
@@ -564,20 +669,15 @@ function initProfilePanel(){
     statusEl.textContent = "Asking the agent to re-rank...";
     btn.disabled = true;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/rerank`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ year, major, interests }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `Server returned ${res.status}`);
-      }
-      const data = await res.json();
+      const data = await requestRerank({ year, major, interests });
       EVENTS = data.events;
       STUDENT_PROFILE = data.student_profile;
       GENERATED_AT = data.generated_at;
-      statusEl.textContent = "Updated just now.";
+      saveStoredProfile(STUDENT_PROFILE);
+      // STUDENT_PROFILE.interests now IS what's lit up in the DOM, so it's
+      // safe to go back to deriving chip state from the profile again.
+      userEditedInterests = false;
+      statusEl.textContent = "Updated and saved -- this map will remember it next time you visit.";
       renderData();
       document.getElementById("profilePanel").classList.add("hidden");
     } catch (err) {
@@ -587,11 +687,44 @@ function initProfilePanel(){
       btn.disabled = false;
     }
   };
+
+  document.getElementById("forgetProfileBtn").onclick = () => {
+    clearStoredProfile();
+    document.getElementById("profileStatus").textContent = "Forgot saved profile on this browser.";
+  };
+}
+
+/* On load: if this browser already has a saved profile (no login, just
+   localStorage -- see the file-level comment above), apply it
+   automatically so the student gets their personalized map without
+   touching "Edit profile" again. Silent no-op if the backend isn't
+   running yet -- the static snapshot just stays as-is. */
+async function tryAutoPersonalize(){
+  const stored = loadStoredProfile();
+  if (!stored) return;
+  showPersonalizingBanner();
+  try {
+    const data = await requestRerank(stored);
+    EVENTS = data.events;
+    STUDENT_PROFILE = data.student_profile;
+    GENERATED_AT = data.generated_at;
+    renderData();
+    renderInterestChips();
+    document.getElementById("inputYear").value = STUDENT_PROFILE.year;
+    document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
+  } catch (err) {
+    console.warn("Auto-personalize skipped (backend not reachable yet):", err.message);
+    // Don't leave the banner stuck on "Personalizing..." forever -- fall
+    // back to whatever profile/events we actually have (the static snapshot).
+    renderProfileBanner();
+  }
 }
 
 initMap();
 initProfilePanel();
 renderData();
+fetchRealCategories();
+tryAutoPersonalize();
 </script>
 </body>
 </html>
