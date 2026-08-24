@@ -20,3 +20,7 @@ my_agent/campus_events_final.json
 # OS cruft
 .DS_Store
 my_agent/events.db
+
+# JS test deps (my_agent/tests) -- installed via `npm install`, not committed.
+# package-lock.json IS committed (standard practice, pins reproducible versions).
+my_agent/tests/node_modules/

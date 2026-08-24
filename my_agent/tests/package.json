@@ -1,0 +1,11 @@
+{
+  "name": "campus-compass-frontend-tests",
+  "private": true,
+  "description": "jsdom regression tests for campus_map_prototype.html's client-side logic (see PROJECT_LOG.md section 13 for the profile-chip race condition this guards against).",
+  "scripts": {
+    "test": "node test_profile_chip_race.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
