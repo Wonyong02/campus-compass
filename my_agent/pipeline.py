@@ -44,12 +44,29 @@ def build_pipeline(months_ahead: int = 3) -> list[dict]:
     ranked = prioritize_events(STUDENT_PROFILE, agent_input)
     print(f"  -> {len(ranked)} events ranked\n")
 
+    # Same defensive handling as app.py's /api/rerank: don't trust the agent's
+    # ids/tiers blindly (a hallucinated id used to crash this whole script
+    # with a KeyError), and don't let events the agent skipped just vanish.
     final_events = []
-    for item in ranked:
+    seen_ids = set()
+    for item in ranked if isinstance(ranked, list) else []:
+        if not isinstance(item, dict) or item.get("id") not in id_lookup:
+            print(f"  [skipped] agent returned an unrecognized id: {item}")
+            continue
+        seen_ids.add(item["id"])
         ev = id_lookup[item["id"]]
-        ev["tier"] = item["tier"]
-        ev["reason"] = item["reason"]
+        ev["tier"] = item.get("tier") if item.get("tier") in ("high", "medium", "low") else "low"
+        ev["reason"] = item.get("reason") or "No reason given by the agent."
         final_events.append(ev)
+
+    dropped_ids = sorted(set(id_lookup) - seen_ids)
+    if dropped_ids:
+        print(f"  [note] agent didn't rank {len(dropped_ids)} event(s), added as low priority: {dropped_ids}")
+        for i in dropped_ids:
+            ev = id_lookup[i]
+            ev["tier"] = "low"
+            ev["reason"] = "Not ranked by the agent; shown as low priority by default."
+            final_events.append(ev)
 
     return final_events
 

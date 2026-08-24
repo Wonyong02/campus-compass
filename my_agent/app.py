@@ -108,12 +108,39 @@ def rerank():
     except Exception as e:  # Bedrock call failed / bad JSON back from the agent, etc.
         return jsonify({"error": f"Agent re-ranking failed: {e}"}), 502
 
+    # The agent's output is untrusted: it can hallucinate an id that was never
+    # in agent_input, return a tier that isn't high/medium/low, or simply omit
+    # some events from the ranking instead of scoring them. None of that
+    # should crash the request (a raw KeyError used to bubble up here as an
+    # unhandled 500) or silently vanish events from the map -- so validate as
+    # we go and fall back to a safe default per event instead.
     final_events = []
-    for item in ranked:
+    seen_ids = set()
+    skipped_ids = []
+    for item in ranked if isinstance(ranked, list) else []:
+        if not isinstance(item, dict) or item.get("id") not in id_lookup:
+            skipped_ids.append(item.get("id") if isinstance(item, dict) else item)
+            continue
+        seen_ids.add(item["id"])
         ev = dict(id_lookup[item["id"]])
-        ev["tier"] = item["tier"]
-        ev["reason"] = item["reason"]
+        ev["tier"] = item.get("tier") if item.get("tier") in ("high", "medium", "low") else "low"
+        ev["reason"] = item.get("reason") or "No reason given by the agent."
         final_events.append(ev)
+
+    if skipped_ids:
+        print(f"[rerank] agent returned {len(skipped_ids)} unrecognized id(s), skipped: {skipped_ids}")
+
+    # Events the agent dropped from its ranking entirely still get shown --
+    # as low priority with a generic reason -- rather than disappearing from
+    # the map without explanation.
+    dropped_ids = sorted(set(id_lookup) - seen_ids)
+    if dropped_ids:
+        print(f"[rerank] agent didn't rank {len(dropped_ids)} event(s), added as low priority: {dropped_ids}")
+        for i in dropped_ids:
+            ev = dict(id_lookup[i])
+            ev["tier"] = "low"
+            ev["reason"] = "Not ranked by the agent; shown as low priority by default."
+            final_events.append(ev)
 
     return jsonify({
         "generated_at": datetime.now().isoformat(),
