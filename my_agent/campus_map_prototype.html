@@ -423,6 +423,14 @@ let STUDENT_PROFILE = { year: "sophomore", major: "Computer Science", interests:
 // (e.g. fetchRealCategories()'s fast /api/categories call finishing before
 // tryAutoPersonalize()'s slower /api/rerank call restores the real profile).
 let userEditedInterests = false;
+// True until real backend data (from /api/rerank) replaces EVENTS below.
+// EVENTS starts out as a snapshot generated on 2026-08-23 with real but
+// fixed dates -- once those dates are all in the past, showing them as if
+// they were current is actively misleading rather than a harmless demo
+// fallback. renderData() only applies the "hide past events" / "snapshot
+// expired" handling while this stays true; once live data arrives it's
+// always current, so the flag flips off and events render unfiltered.
+let STATIC_SNAPSHOT = true;
 const CAMPUS_CENTER = [37.3192806, -122.0447919];
 
 let EVENTS = [
@@ -497,6 +505,11 @@ function initMap(){
   }).addTo(map);
 }
 
+// ISO yyyy-mm-dd strings compare correctly with plain string comparison.
+function isPastEvent(ev, todayIso){
+  return !!ev.date && ev.date < todayIso;
+}
+
 function renderData(){
   renderProfileBanner();
 
@@ -504,7 +517,21 @@ function renderData(){
   leafletMarkers.forEach(({ marker }) => map.removeLayer(marker));
   leafletMarkers = [];
 
-  const sorted = [...EVENTS].sort((a, b) => {
+  // EVENTS starts out as a fixed offline snapshot (generated 2026-08-23).
+  // Once every one of those dates is in the past, that's no longer a
+  // harmless demo fallback -- it's a map full of events that already
+  // happened. Only filter/guard while STATIC_SNAPSHOT is true; once live
+  // data replaces EVENTS (see tryAutoPersonalize / applyProfileBtn), it's
+  // always current and renders unfiltered.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const source = STATIC_SNAPSHOT ? EVENTS.filter(ev => !isPastEvent(ev, todayIso)) : EVENTS;
+
+  if (STATIC_SNAPSHOT && source.length === 0) {
+    renderStaleSnapshotNotice();
+    return;
+  }
+
+  const sorted = [...source].sort((a, b) => {
     const rankDiff = TIER_RANK[a.tier] - TIER_RANK[b.tier];
     if (rankDiff !== 0) return rankDiff;
     if (!a.date) return 1;
@@ -561,6 +588,28 @@ function renderData(){
     return `<span class="${cls}">${formatDate(ev.date)} · ${ev.title}</span>`;
   }).join('<span class="sep">//</span>');
   document.getElementById("tickerTrack").innerHTML = tickerItems + '<span class="sep">//</span>' + tickerItems;
+}
+
+/* Shown instead of renderData()'s normal output when every event in the
+   bundled offline snapshot is in the past and no live backend data has
+   arrived yet -- an honest "this demo is expired, here's how to get real
+   data" state instead of silently displaying events that already happened. */
+function renderStaleSnapshotNotice(){
+  const lastDate = EVENTS.reduce((max, ev) => (ev.date && ev.date > max) ? ev.date : max, "");
+
+  const el = document.getElementById("profileBanner");
+  el.innerHTML = `<span style="opacity:0.85;">Offline demo snapshot has expired — start the backend for live data</span>`;
+
+  document.getElementById("agendaList").innerHTML = `
+    <div style="padding:16px;color:var(--text-dim);font-size:12.5px;line-height:1.6;">
+      This page's bundled offline snapshot only covers events through
+      <strong>${formatDate(lastDate)}</strong>, which has passed. Run
+      <code>python my_agent/app.py</code>, then reload this page, to fetch
+      live, currently-ranked events instead of this expired snapshot.
+    </div>`;
+  document.getElementById("agendaSub").textContent = "Offline snapshot expired — no live backend connected yet";
+  document.getElementById("tickerTrack").innerHTML =
+    `<span>Offline demo snapshot has expired — start the backend (python my_agent/app.py) for live data</span>`;
 }
 
 /* ---------------- no-login profile persistence (localStorage) ---------------- */
@@ -673,6 +722,7 @@ function initProfilePanel(){
       EVENTS = data.events;
       STUDENT_PROFILE = data.student_profile;
       GENERATED_AT = data.generated_at;
+      STATIC_SNAPSHOT = false; // live data now -- always current, no more staleness filtering
       saveStoredProfile(STUDENT_PROFILE);
       // STUDENT_PROFILE.interests now IS what's lit up in the DOM, so it's
       // safe to go back to deriving chip state from the profile again.
@@ -708,6 +758,7 @@ async function tryAutoPersonalize(){
     EVENTS = data.events;
     STUDENT_PROFILE = data.student_profile;
     GENERATED_AT = data.generated_at;
+    STATIC_SNAPSHOT = false; // live data now -- always current, no more staleness filtering
     renderData();
     renderInterestChips();
     document.getElementById("inputYear").value = STUDENT_PROFILE.year;
@@ -715,8 +766,12 @@ async function tryAutoPersonalize(){
   } catch (err) {
     console.warn("Auto-personalize skipped (backend not reachable yet):", err.message);
     // Don't leave the banner stuck on "Personalizing..." forever -- fall
-    // back to whatever profile/events we actually have (the static snapshot).
-    renderProfileBanner();
+    // back to whatever profile/events we actually have (the static
+    // snapshot). Re-run renderData() rather than just the banner, so a
+    // still-STATIC_SNAPSHOT page correctly falls back to the "expired
+    // snapshot" state instead of showing a banner that contradicts an
+    // agenda list left over from the very first renderData() call.
+    renderData();
   }
 }
 
