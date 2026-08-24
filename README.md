@@ -5,7 +5,9 @@ deadlines, workshops — and consolidates it into a single map-based
 interface. An AI agent (built with the [Strands Agents
 SDK](https://strandsagents.com)) scores each event's importance based
 on a student's profile (year, major, interests) instead of a fixed
-formula, and displays the results as a prioritized map + agenda.
+formula, and displays the results as a prioritized map + agenda. A
+student sets their profile once and the browser remembers it — no
+login required.
 
 Built for the **Agents for Humans Hackathon** (Devpost), Everyday
 Agents track. See [`PROJECT_LOG.md`](./PROJECT_LOG.md) for the full
@@ -14,18 +16,31 @@ build story, design decisions, and known limitations.
 ## Architecture
 
 ```
-scrape_events.py  --->  geocode_events.py  --->  priority_agent.py  --->  pipeline.py
-(real event data)      (lat/lng lookup)         (Strands Agent          (glues it all
-                                                  reasoning)              together)
-                                                                              |
-                                                                              v
-                                                          campus_map_prototype.html
-                                                          (map + agenda + ticker UI)
+scrape_events.py  --->  geocode_events.py  --->  db.py (SQLite)
+(real event data)      (lat/lng lookup)         (events.db, persisted
+                                                   so scraping only runs
+                                                   once, not per request)
+                                                        |
+                                                        v
+                                                    app.py (Flask)
+                                                    POST /api/rerank  ---> priority_agent.py
+                                                    GET  /api/categories    (Strands Agent
+                                                    POST /api/refresh        reasoning, computed
+                                                    GET  /health              live per profile)
+                                                        |
+                                                        v
+                                          campus_map_prototype.html
+                                          (map + agenda + ticker + profile
+                                           panel; profile lives in the
+                                           browser's localStorage, no
+                                           login/account)
 ```
 
 Each stage in `my_agent/` is a standalone, independently-runnable
-script. `pipeline.py` chains the three data-processing stages together
-and writes `campus_events_final.json`.
+script. `pipeline.py` still exists as a way to chain scrape → geocode →
+prioritize into one static JSON snapshot (useful for offline testing),
+but the live app reads events from `events.db` and calls the Strands
+Agent fresh on every profile change via `app.py`.
 
 ## Setup
 
@@ -43,6 +58,10 @@ source .venv/bin/activate       # Windows: .venv\Scripts\activate
 ```bash
 pip install -r requirements.txt
 ```
+
+This includes Flask + Flask-CORS (for the live backend) in addition to
+the Strands Agents SDK and scraping libraries. SQLite itself needs no
+separate install — it's part of the Python standard library.
 
 **3. Set up AWS Bedrock access** (each teammate needs their own):
 
@@ -64,20 +83,31 @@ should configure their own local credentials via `aws configure`
 
 ## Usage
 
-Run the full pipeline (scrape → geocode → prioritize):
+Start the backend (first run scrapes + geocodes De Anza's events into
+`my_agent/events.db`; later runs reuse that database instead of
+re-scraping):
+
+```bash
+python -u my_agent/app.py
+```
+
+This serves on `http://localhost:5001`. Then open
+`my_agent/campus_map_prototype.html` in a browser. On first visit,
+click "Edit profile" to set your year/major/interests and get a live,
+AI-ranked map; the profile is saved to that browser's `localStorage`
+and automatically re-applied on future visits — no login, no account.
+If the backend isn't running, the page still displays a static
+snapshot rather than failing outright.
+
+To force a fresh scrape (bypassing the cached database), call
+`POST /api/refresh`, or run the older standalone pipeline:
 
 ```bash
 python -u my_agent/pipeline.py
 ```
 
-This produces `my_agent/campus_events_final.json`. Open
-`my_agent/campus_map_prototype.html` in a browser to view the map —
-note that it currently reads from a **hand-embedded snapshot** of the
-pipeline's output rather than fetching the JSON file live (see
-`PROJECT_LOG.md` §11 for why, and what it'd take to change that).
-
-To edit which student profile the pipeline personalizes for, change the
-`STUDENT_PROFILE` dict at the top of `my_agent/pipeline.py`.
+(edit the `STUDENT_PROFILE` dict at the top of that file to change
+which profile it personalizes for).
 
 ## Project structure
 
@@ -91,13 +121,15 @@ campus-compass/
     ├── scrape_events.py     # scrapes De Anza College's events pages
     ├── geocode_events.py    # resolves free-text locations to lat/lng
     ├── priority_agent.py    # Strands Agent that ranks events per student
-    ├── pipeline.py          # runs all three stages end to end
-    └── campus_map_prototype.html   # map + agenda + ticker UI
+    ├── db.py                # SQLite persistence for scraped/geocoded events
+    ├── app.py                # Flask backend: live re-ranking + categories API
+    ├── pipeline.py          # standalone scrape→geocode→prioritize→JSON snapshot
+    └── campus_map_prototype.html   # map + agenda + ticker + profile panel UI
 ```
 
 ## Next steps
 
-See `PROJECT_LOG.md` §12 for the full list. Highlights:
-- Backend endpoint so the map's profile selector can re-rank live
-- 1-week / 1-day-before notification logic
+See `PROJECT_LOG.md` §15 for the full list. Highlights:
+- Notification logic (1-week / 1-day-before reminders)
+- Separate Event Detail page + Filter/Search
 - Support for additional schools (De Anza's scraper is school-specific)
