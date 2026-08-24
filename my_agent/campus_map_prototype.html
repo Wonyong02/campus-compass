@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Campus Compass — De Anza College (Live Data)</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#17212B;
+    --paper:#F5F1E8;
+    --paper-2:#EDE7D8;
+    --coral:#E85A4F;
+    --amber:#D9922F;
+    --slate:#5C7A93;
+    --text:#22282E;
+    --text-dim:#6B6459;
+    --hair:#D8D2C4;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--ink);}
+  body{
+    font-family:'Inter',sans-serif;
+    color:var(--text);
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    overflow:hidden;
+  }
+
+  header{
+    background:var(--ink);
+    color:var(--paper);
+    padding:14px 20px 0 20px;
+    flex-shrink:0;
+  }
+  .header-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .brand{
+    font-family:'Space Grotesk',sans-serif;
+    font-weight:700;
+    font-size:22px;
+    letter-spacing:0.3px;
+    display:flex;
+    align-items:baseline;
+    gap:8px;
+  }
+  .brand .dot{color:var(--coral);}
+  .brand small{
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:500;
+    font-size:11px;
+    color:#8B93A0;
+    letter-spacing:1px;
+  }
+
+  .profile-banner{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:#AEB6C0;
+    background:#1E2A38;
+    border:1px solid #2E3D4E;
+    border-radius:20px;
+    padding:6px 14px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    white-space:nowrap;
+  }
+  .profile-banner strong{color:var(--paper);font-weight:600;}
+
+  .ticker-wrap{
+    background:#0F161E;
+    border-top:1px solid #2A3644;
+    border-bottom:1px solid #2A3644;
+    overflow:hidden;
+    white-space:nowrap;
+    position:relative;
+    height:34px;
+    display:flex;
+    align-items:center;
+  }
+  .ticker-label{
+    background:var(--coral);
+    color:white;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    font-weight:600;
+    letter-spacing:1px;
+    padding:4px 10px;
+    height:100%;
+    display:flex;
+    align-items:center;
+    flex-shrink:0;
+    z-index:2;
+  }
+  .ticker-track{
+    display:inline-flex;
+    align-items:center;
+    animation:scroll 26s linear infinite;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12.5px;
+    color:#D9DEE4;
+    padding-left:16px;
+  }
+  .ticker-track span.sep{color:#4B5A6B;margin:0 18px;}
+  .ticker-track span.tag-high{color:var(--coral);font-weight:600;}
+  .ticker-track span.tag-med{color:var(--amber);font-weight:600;}
+  @keyframes scroll{
+    0%{transform:translateX(0);}
+    100%{transform:translateX(-50%);}
+  }
+
+  main{
+    flex:1;
+    display:flex;
+    min-height:0;
+    background:var(--paper);
+  }
+  #map{flex:1;min-width:0;}
+
+  .pin{
+    border-radius:50% 50% 50% 0;
+    transform:rotate(-45deg);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 2px 6px rgba(0,0,0,0.35);
+    border:2px solid white;
+  }
+  .pin-inner{transform:rotate(45deg);font-size:13px;}
+  .pin.high{background:var(--coral);width:38px;height:38px;}
+  .pin.medium{background:var(--amber);width:30px;height:30px;}
+  .pin.low{background:var(--slate);width:24px;height:24px;}
+  .pin.high .pin-inner{font-size:16px;}
+  .pin.medium .pin-inner{font-size:13px;}
+  .pin.low .pin-inner{font-size:11px;}
+
+  .leaflet-popup-content-wrapper{border-radius:10px;font-family:'Inter',sans-serif;}
+  .popup-tag{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:0.5px;
+    padding:2px 8px;
+    border-radius:10px;
+    color:white;
+    margin-bottom:6px;
+  }
+  .popup-title{font-weight:600;font-size:14.5px;margin:2px 0 4px;}
+  .popup-reason{font-size:12px;color:var(--text-dim);line-height:1.5;font-style:italic;}
+
+  aside{
+    width:340px;
+    flex-shrink:0;
+    background:var(--paper);
+    border-left:1px solid var(--hair);
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+  }
+  .agenda-head{padding:16px 18px 10px;border-bottom:1px solid var(--hair);}
+  .agenda-head h2{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:15px;
+    margin:0 0 2px;
+    letter-spacing:0.2px;
+  }
+  .agenda-head p{margin:0;font-size:12px;color:var(--text-dim);}
+  .agenda-list{flex:1;overflow-y:auto;padding:8px 12px;}
+  .card{
+    background:white;
+    border:1px solid var(--hair);
+    border-radius:10px;
+    padding:12px 14px;
+    margin-bottom:10px;
+    cursor:pointer;
+    transition:transform .12s ease, box-shadow .12s ease;
+    border-left-width:4px;
+    border-left-style:solid;
+  }
+  .card:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(23,33,43,0.08);}
+  .card.high{border-left-color:var(--coral);}
+  .card.medium{border-left-color:var(--amber);}
+  .card.low{border-left-color:var(--slate);}
+  .card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;}
+  .card-tag{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    font-weight:600;
+    letter-spacing:0.5px;
+    flex-shrink:0;
+  }
+  .card.high .card-tag{color:var(--coral);}
+  .card.medium .card-tag{color:var(--amber);}
+  .card.low .card-tag{color:var(--slate);}
+  .card-when{font-size:11px;color:var(--text-dim);text-align:right;}
+  .card-title{font-weight:600;font-size:13.5px;margin-bottom:3px;}
+  .card-loc{font-size:12px;color:var(--text-dim);margin-bottom:5px;}
+  .card-reason{font-size:12px;color:var(--text);line-height:1.4;font-style:italic;}
+  .virtual-pill{
+    display:inline-block;
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9.5px;
+    letter-spacing:0.3px;
+    background:var(--paper-2);
+    color:var(--text-dim);
+    border-radius:8px;
+    padding:1px 7px;
+    margin-left:5px;
+  }
+
+  .legend{
+    padding:12px 18px;
+    border-top:1px solid var(--hair);
+    font-size:11px;
+    color:var(--text-dim);
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .legend-row{display:flex;align-items:center;gap:8px;}
+  .legend-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+
+  @media (max-width:820px){
+    main{flex-direction:column;}
+    aside{width:100%;border-left:none;border-top:1px solid var(--hair);max-height:46vh;}
+    #map{height:34vh;}
+    .header-top{flex-direction:column;align-items:flex-start;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-top">
+    <div class="brand">Campus<span class="dot">·</span>Compass <small>DE ANZA COLLEGE — LIVE SCRAPED DATA</small></div>
+    <div class="profile-banner" id="profileBanner"></div>
+  </div>
+  <div class="ticker-wrap">
+    <div class="ticker-label">PRIORITY FEED</div>
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+</header>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="agenda-head">
+      <h2 id="agendaTitle">Your Priorities</h2>
+      <p id="agendaSub">Ranked by the Strands Agent, not a fixed formula</p>
+    </div>
+    <div class="agenda-list" id="agendaList"></div>
+    <div class="legend">
+      <div class="legend-row"><span class="legend-dot" style="background:var(--coral)"></span> High — AI-judged urgent and relevant</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--amber)"></span> Medium — relevant, not urgent</div>
+      <div class="legend-row"><span class="legend-dot" style="background:var(--slate)"></span> Low — lower relevance for this profile</div>
+    </div>
+  </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+/* ---------------------------------------------------------
+   Real data, generated by the actual pipeline:
+   scrape_events.py -> geocode_events.py -> priority_agent.py
+   (see pipeline.py). Tier and reason were computed by the
+   Strands Agent, not by client-side JS -- this file only
+   visualizes what the agent already decided.
+--------------------------------------------------------- */
+const GENERATED_AT = "2026-08-23T18:53:16.523889";
+const STUDENT_PROFILE = { year: "sophomore", major: "Computer Science", interests: ["career", "academic"] };
+const CAMPUS_CENTER = [37.3192806, -122.0447919];
+
+const EVENTS = [
+  {"title":"University of California (UC) Application Workshop","date":"2026-08-25","time":"2:30 pm to 4:00 pm","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376791","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"high","reason":"UC application workshop is in 2 days, relevant for sophomore transfer planning."},
+  {"title":"Transfer Admission Planner (TAP) Workshop","date":"2026-08-27","time":"9:30 am to 11:00 am","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376783","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"high","reason":"TAP workshop in 4 days, directly useful for sophomore transfer preparation."},
+  {"title":"Fall classes begin","date":"2026-09-21","time":"All-day event.","location":null,"url":"https://www.deanza.edu/events/event.html?id=188112899","latitude":null,"longitude":null,"is_virtual":false,"match_type":"none","tier":"high","reason":"Fall classes begin soon, academically critical for all students."},
+  {"title":"UC Transfer Admission Guarantee (TAG) Workshop","date":"2026-09-03","time":"1:30 pm to 3:00 pm","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376727","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"medium","reason":"UC TAG workshop is relevant for transfer-planning sophomore, about 11 days away."},
+  {"title":"University of California (UC) Application Workshop","date":"2026-09-08","time":"9:30 am to 11:00 am","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376793","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"medium","reason":"Another UC application workshop, useful backup opportunity for transfer prep."},
+  {"title":"UC Transfer Admission Guarantee (TAG) Workshop","date":"2026-09-09","time":"2:30 pm to 4:00 pm","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376728","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"medium","reason":"UC TAG workshop relevant to sophomore considering UC transfer path."},
+  {"title":"UC Transfer Admission Guarantee (TAG) Workshop","date":"2026-09-14","time":"9:30 am to 11:00 am","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376731","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"medium","reason":"Additional TAG workshop opportunity, useful for transfer-focused sophomore."},
+  {"title":"Welcome Day","date":"2026-09-18","time":"10:00 am to 1:00 pm","location":"Main Quad","url":"https://www.deanza.edu/events/event.html?id=189626078","latitude":37.3192,"longitude":-122.0448,"is_virtual":false,"match_type":"approximate","tier":"medium","reason":"Welcome Day could offer academic and career networking opportunities."},
+  {"title":"Labor Day holiday - no classes; offices closed","date":"2026-09-07","time":"All-day event.","location":null,"url":"https://www.deanza.edu/events/event.html?id=188112642","latitude":null,"longitude":null,"is_virtual":false,"match_type":"none","tier":"medium","reason":"Labor Day holiday affects class and office availability; good to know."},
+  {"title":"College Opening Day","date":"2026-09-17","time":"8:00 am to 5:00 pm","location":"Visual and Performing Arts Center (VPAC)","url":"https://www.deanza.edu/events/event.html?id=189626082","latitude":37.3192806,"longitude":-122.0447919,"is_virtual":false,"match_type":"fallback_campus_center","tier":"low","reason":"College Opening Day has vague details and limited CS relevance."},
+  {"title":"District Opening Day","date":"2026-09-16","time":"All-day event.","location":null,"url":"https://www.deanza.edu/events/event.html?id=189626083","latitude":null,"longitude":null,"is_virtual":false,"match_type":"none","tier":"low","reason":"District Opening Day has no details and low direct student relevance."},
+  {"title":"Temple University, Japan Campus (Tabling)","date":"2026-09-22","time":"10:00 am to 12:00 pm","location":"Campus Center Dining Hall, table #2","url":"https://www.deanza.edu/events/event.html?id=191118788","latitude":37.320816,"longitude":-122.0455674,"is_virtual":false,"match_type":"confirmed","tier":"low","reason":"Japan campus tabling is loosely relevant; not aligned with CS career interests."},
+  {"title":"De Anza Flea Market","date":"2026-09-05","time":"8:00 am to 2:00 pm","location":"Parking Lots A & B","url":"https://www.deanza.edu/events/event.html?id=186205975","latitude":37.3205,"longitude":-122.043,"is_virtual":false,"match_type":"approximate","tier":"low","reason":"Flea market is not related to CS major or academic/career interests."}
+];
+
+const TIER_RANK = { high: 0, medium: 1, low: 2 };
+
+function formatDate(iso){
+  if(!iso) return "No date";
+  const d = new Date(iso + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" });
+}
+
+function locationLabel(ev){
+  if (ev.is_virtual) return "Online";
+  if (!ev.location) return "No location listed";
+  const prefix = (ev.match_type === "approximate" || ev.match_type === "fallback_campus_center") ? "~ " : "";
+  return prefix + ev.location;
+}
+
+function makeIcon(tier){
+  const sizes = { high: 38, medium: 30, low: 24 };
+  const size = sizes[tier] || 24;
+  return L.divIcon({
+    className: "",
+    html: `<div class="pin ${tier}"><div class="pin-inner">●</div></div>`,
+    iconSize: [size, size],
+    iconAnchor: [size / 2, size]
+  });
+}
+
+function renderProfileBanner(){
+  const el = document.getElementById("profileBanner");
+  const interestList = STUDENT_PROFILE.interests.join(", ");
+  const generatedDate = new Date(GENERATED_AT).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  el.innerHTML = `Personalized for <strong>${capitalize(STUDENT_PROFILE.year)} · ${STUDENT_PROFILE.major}</strong> (${interestList}) · generated ${generatedDate}`;
+}
+
+function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function render(){
+  renderProfileBanner();
+
+  const sorted = [...EVENTS].sort((a, b) => {
+    const rankDiff = TIER_RANK[a.tier] - TIER_RANK[b.tier];
+    if (rankDiff !== 0) return rankDiff;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+
+  const map = L.map("map", { zoomControl: false }).setView(CAMPUS_CENTER, 16);
+  L.control.zoom({ position: "bottomright" }).addTo(map);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: "&copy; OpenStreetMap contributors",
+    maxZoom: 19
+  }).addTo(map);
+
+  const markers = [];
+  sorted.forEach(ev => {
+    if (ev.latitude == null || ev.longitude == null) return; // virtual / no-location events get no pin
+    const marker = L.marker([ev.latitude, ev.longitude], { icon: makeIcon(ev.tier) }).addTo(map);
+    const tierColor = ev.tier === "high" ? "#E85A4F" : ev.tier === "medium" ? "#D9922F" : "#5C7A93";
+    marker.bindPopup(`
+      <span class="popup-tag" style="background:${tierColor}">${formatDate(ev.date)} · ${ev.tier.toUpperCase()}</span>
+      <div class="popup-title">${ev.title}</div>
+      <div class="popup-reason">"${ev.reason}"</div>
+    `);
+    markers.push({ ev, marker });
+  });
+
+  const agendaList = document.getElementById("agendaList");
+  agendaList.innerHTML = "";
+  sorted.forEach(ev => {
+    const card = document.createElement("div");
+    card.className = `card ${ev.tier}`;
+    const virtualPill = ev.is_virtual ? `<span class="virtual-pill">VIRTUAL</span>` : "";
+    card.innerHTML = `
+      <div class="card-top">
+        <span class="card-tag">${ev.tier.toUpperCase()}</span>
+        <span class="card-when">${formatDate(ev.date)}${ev.time ? " · " + ev.time : ""}</span>
+      </div>
+      <div class="card-title">${ev.title}${virtualPill}</div>
+      <div class="card-loc">📍 ${locationLabel(ev)}</div>
+      <div class="card-reason">"${ev.reason}"</div>
+    `;
+    card.onclick = () => {
+      const found = markers.find(m => m.ev === ev);
+      if (found) {
+        map.flyTo([ev.latitude, ev.longitude], 17, { duration: 0.6 });
+        found.marker.openPopup();
+      } else {
+        window.open(ev.url, "_blank");
+      }
+    };
+    agendaList.appendChild(card);
+  });
+
+  const highCount = sorted.filter(e => e.tier === "high").length;
+  document.getElementById("agendaSub").textContent =
+    `${highCount} high-priority item${highCount === 1 ? "" : "s"} out of ${sorted.length} scraped events`;
+
+  const tickerSource = sorted.slice(0, 6);
+  const tickerItems = tickerSource.map(ev => {
+    const cls = ev.tier === "high" ? "tag-high" : ev.tier === "medium" ? "tag-med" : "";
+    return `<span class="${cls}">${formatDate(ev.date)} · ${ev.title}</span>`;
+  }).join('<span class="sep">//</span>');
+  document.getElementById("tickerTrack").innerHTML = tickerItems + '<span class="sep">//</span>' + tickerItems;
+}
+
+render();
+</script>
+</body>
+</html>

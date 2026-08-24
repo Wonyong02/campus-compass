@@ -1,0 +1,21 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Generated data (regenerate by running the pipeline instead of committing it)
+my_agent/deanza_raw.html
+my_agent/deanza_events.json
+my_agent/deanza_events_geocoded.json
+my_agent/campus_events_final.json
+
+# Credentials -- never commit these
+.env
+.aws/
+*.pem
+
+# OS cruft
+.DS_Store
