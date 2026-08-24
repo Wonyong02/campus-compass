@@ -29,24 +29,40 @@ Hackathon submission answer (Everyday Agents track):
 ## 2. Architecture
 
 ```
-scrape_events.py  --->  geocode_events.py  --->  priority_agent.py  --->  pipeline.py
-(real event data)      (lat/lng lookup)         (Strands Agent          (glues it all
-                                                  reasoning)              together)
-                                                                              |
-                                                                              v
-                                                          campus_map_prototype.html
-                                                          (map + agenda + ticker UI)
+scrape_events.py  --->  geocode_events.py  --->  db.py (SQLite)
+(real event data)      (lat/lng lookup)         (events.db, persisted
+                                                   so scraping only runs
+                                                   once, not per request)
+                                                        |
+                                                        v
+                                                    app.py (Flask)
+                                                    POST /api/rerank  ---> priority_agent.py
+                                                    GET  /api/categories    (Strands Agent
+                                                    POST /api/refresh        reasoning, computed
+                                                    GET  /health              live per profile)
+                                                        |
+                                                        v
+                                          campus_map_prototype.html
+                                          (map + agenda + ticker + profile
+                                           panel; profile itself lives in
+                                           the browser's localStorage, no
+                                           login/account)
 ```
 
-Each stage is a standalone, independently-runnable script. `pipeline.py`
-imports and chains the three data-processing stages; the HTML file is a
-separate visualization layer that currently consumes a hand-embedded
-snapshot of `pipeline.py`'s output (see Section 8, "Known Limitations").
+Scraping, geocoding, and storage are decoupled from the AI judgment
+step on purpose: the event data doesn't change when a student's profile
+changes, but the priority *does*, so only `priority_agent.py`'s work is
+re-run on every profile edit. `pipeline.py` still exists as a standalone
+script that chains scrape → geocode → prioritize → static JSON snapshot,
+useful for offline testing without the Flask server running.
 
 ## 3. Environment Setup
 
 - Python virtual environment: `python3 -m venv .venv` → `source .venv/bin/activate`
 - SDK: `pip install strands-agents strands-agents-tools`
+- Backend: `pip install flask flask-cors` (added when the live
+  re-ranking API was built; see Section 11)
+- Database: `sqlite3` — Python standard library, no extra install
 - AWS Bedrock:
   - AWS account already existed; Bedrock model access is now
     auto-enabled per-account (AWS retired the manual "Model access"
@@ -170,8 +186,9 @@ STUDENT_PROFILE = {
 ```
 
 Output: `campus_events_final.json` — every scraped event, enriched
-with coordinates and an agent-assigned tier + reason. This file is the
-single source of truth the map should ideally read from.
+with coordinates and an agent-assigned tier + reason. This is still
+useful as an offline snapshot / demo fallback, but `events.db` (Section
+12) is now the actual source of truth the live backend reads from.
 
 **Live pipeline run result (2026-08-23):** 13 real events scraped
 across the "upcoming" list page and 3 months of calendar-grid pages,
@@ -181,7 +198,7 @@ left blank). Agent ranked 3 as high priority (both UC transfer
 workshops + "Fall classes begin"), 6 medium, 4 low — matching manual
 inspection of what's actually relevant to a CS-major sophomore.
 
-## 10. Component: Final Map (`campus_map_prototype.html`, v2)
+## 10. Component: Static Map Snapshot (`campus_map_prototype.html`, v2)
 
 Rebuilt to consume real pipeline output instead of mock data:
 
@@ -192,16 +209,109 @@ Rebuilt to consume real pipeline output instead of mock data:
 - Approximate/fallback-geocoded locations get a `~` prefix so the UI
   doesn't overclaim precision it doesn't have
 - Profile selector became a **read-only banner** ("Personalized for:
-  Sophomore · Computer Science...") since re-ranking now requires a
-  real (non-instant) Bedrock call — see limitations below
+  Sophomore · Computer Science...") since re-ranking at this stage
+  required re-running `pipeline.py` by hand — this limitation is what
+  Section 11 below replaces.
 
-## 11. Known Limitations / Honest Caveats
+## 11. Component: Live Profile Re-ranking Backend (`app.py`)
 
-- **Profile selection is no longer live-interactive** in the HTML.
-  Changing the displayed student profile now requires re-running
-  `pipeline.py` (which calls the LLM) rather than an instant client-side
-  recompute. Making it interactive again needs a small backend endpoint
-  (e.g. Flask/FastAPI) the page can call on profile change.
+Replaced the read-only banner with a real Flask API so the profile
+panel can call `priority_agent.py` on demand instead of requiring a
+manual `pipeline.py` re-run:
+
+- `POST /api/rerank` — body `{ year, major, interests }`, returns
+  freshly-ranked events (`tier` + `reason` per event) for that exact
+  profile, computed live against the Strands Agent
+- `GET /api/categories` — real category labels seen in the scraped
+  events, so the profile panel offers actual De Anza categories instead
+  of a guessed list
+- `POST /api/refresh` — forces a fresh scrape + geocode, overwriting
+  the stored event list (used sparingly — hits the live De Anza site)
+- `GET /health` — status + last-scraped timestamp
+
+Scraping and geocoding are deliberately kept **out of** the
+`/api/rerank` request path: De Anza's server rate-limits aggressively
+(see Section 7), and the event list doesn't change when a student's
+profile changes. Only the Strands Agent's judgment re-runs per request;
+the underlying event data is read from `events.db` (Section 12).
+
+End-to-end verified locally with real Bedrock calls (e.g. a
+junior/transfer-focused profile correctly re-ranked transfer-related
+workshops as high priority). A single `/api/rerank` call takes roughly
+6 seconds in practice — genuine Bedrock/Strands Agent latency, not a
+bug — which shaped both the database design (avoid re-scraping on that
+critical path) and the frontend UX (Section 13's loading indicator).
+
+## 12. Component: Event Database (`db.py`, SQLite) + No-Login Profile Persistence
+
+**Product direction (explicit decision):** rather than building account
+/ login functionality next, the goal is for a student to get full map
+personalization just by setting their year/major/interests once — no
+account required. Concretely: SQLite over Supabase for the database (no
+external service to provision for a hackathon-scale dataset), and the
+student's profile lives entirely in the browser's `localStorage`
+instead of a server-side user table.
+
+**`events.db` (SQLite) stores:**
+- One `events` table: scraped + geocoded event data (title, date, time,
+  location, category, description, url, coordinates, virtual flag,
+  match_type, scraped_at)
+- A full refresh (`save_events`) wipes and re-inserts on every scrape —
+  the dataset is small (a few dozen events) and always comes from one
+  fresh scrape, so no incremental upsert logic is needed
+
+**Deliberately NOT in the database:**
+- `tier` / `reason` — these are computed **per student profile** by
+  `priority_agent.py` on every `/api/rerank` call, not an intrinsic
+  property of an event. Persisting them would mean the next student
+  with a different profile sees priorities computed for someone else.
+- `Users` / `Preferences` / `SavedEvents` tables — intentionally absent
+  under the no-login direction above. If/when real accounts get built,
+  `db.py`'s module docstring marks where those tables would go.
+
+**Frontend (`campus_map_prototype.html`) changes:**
+- `localStorage` key `campusCompassProfile` stores `{ year, major,
+  interests }` on the browser that set it
+- On page load, if a saved profile exists, the page automatically calls
+  `/api/rerank` with it and re-renders — no re-entering the profile on
+  every visit
+- `GET /api/categories` populates the interest chip list with real
+  category labels instead of a hardcoded guess
+
+## 13. Bug Fix: Profile Chip UI Race Condition
+
+Shortly after shipping Section 12, a real bug surfaced: after a page
+refresh, the profile banner correctly restored the saved profile, but
+the "Edit profile" panel's interest chips still showed the *default*
+selection (career/academic) instead of the actual saved interests —
+the two were out of sync.
+
+**Root cause:** page load fires two async calls at once — the fast
+`GET /api/categories` (~9ms) and the slow `POST /api/rerank` (~6s, real
+Bedrock latency). The chip-rendering function preferred whatever was
+already lit up in the DOM over the live profile state, so the fast
+call's render (still showing defaults, since the slow call hadn't
+resolved yet) got "preserved" even after the slow call finally restored
+the correct profile.
+
+**Fix:** chip rendering now only trusts DOM state once the student has
+actually clicked a chip themselves in that page load (tracked via a
+`userEditedInterests` flag); otherwise it always derives from the live
+profile object. Also added a "Personalizing your map for your saved
+profile…" banner state while the ~6-second auto-restore call is in
+flight, so the wait doesn't read as broken/reverted.
+
+Verified with an automated jsdom test that reproduces the exact race
+(fast `/api/categories` resolving before slow `/api/rerank`) before
+shipping.
+
+## 14. Known Limitations / Honest Caveats
+
+- **No login, by design.** A student's profile lives only in the
+  browser that set it — clearing browser data or switching devices
+  loses it. This is an intentional product tradeoff (see Section 12),
+  not an oversight, but it is a real limitation for a multi-device
+  student.
 - **Single data source.** Only De Anza's own events page is scraped.
   Real deployment would need per-school scraper configs, since every
   school's site structure differs (as seen firsthand: De Anza's own two
@@ -216,17 +326,27 @@ Rebuilt to consume real pipeline output instead of mock data:
   during testing from making too many requests too quickly. Current
   fix (2-second delay, skip-on-failure) is enough for a prototype, not
   necessarily enough for a scheduled production scrape.
+- **Single-page frontend.** Map, agenda, ticker, and profile panel all
+  live in one HTML file rather than separate Home/Events/Detail pages.
+- **Flask's dev server is single-threaded**, and a `/api/rerank` call
+  takes several real seconds (Bedrock latency) — acceptable for a
+  hackathon demo, not production-grade concurrency.
 
-## 12. Possible Next Steps
+## 15. Possible Next Steps
 
-- [ ] Backend endpoint for live profile-based re-ranking
-- [ ] Notification logic (1-week / 1-day-before reminders)
+- [x] ~~Backend endpoint for live profile-based re-ranking~~ — done, see Section 11
+- [x] ~~Minimal database~~ — done (SQLite), see Section 12
+- [ ] Notification logic (1-week / 1-day-before reminders) — closest to
+      the hackathon track's stated emphasis ("only ping you when
+      there's a real decision to make")
+- [ ] Separate Event Detail page + Filter/Search
 - [ ] Support additional schools / a config-driven scraper
 - [ ] Deploy the agent to Bedrock AgentCore Runtime (per hackathon resources)
 - [ ] Handle recurring/multi-day events more explicitly
 - [ ] Real campus GIS data instead of estimated building coordinates
+- [ ] User Flow documentation / page-structure diagram
 
-## 13. Hackathon Logistics
+## 16. Hackathon Logistics
 
 - Registered for Agents for Humans Hackathon (Devpost)
 - Submitted the $50 AWS Promotional Credits request (deadline: Sep 11,
