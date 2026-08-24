@@ -39,7 +39,7 @@ from flask_cors import CORS
 import db as eventsdb
 from scrape_events import scrape_all_events
 from geocode_events import geocode_location
-from priority_agent import prioritize_events
+from priority_agent import build_agent_input, prioritize_events
 
 app = Flask(__name__)
 CORS(app)  # the map page is opened as a local file / localhost, so allow any origin
@@ -87,21 +87,7 @@ def rerank():
     profile.setdefault("interests", [])
 
     raw_events = load_or_scrape_events()
-
-    agent_input = []
-    id_lookup = {}
-    for i, ev in enumerate(raw_events):
-        if not ev.get("title"):
-            continue  # same skip-unparseable-events rule as pipeline.py
-        agent_input.append({
-            "id": i,
-            "title": ev["title"],
-            "date": ev.get("date"),
-            "time": ev.get("time"),
-            "location": ev.get("location"),
-            "description": (ev.get("description") or "")[:300],
-        })
-        id_lookup[i] = ev
+    agent_input, id_lookup = build_agent_input(raw_events)
 
     try:
         ranked = prioritize_events(profile, agent_input)

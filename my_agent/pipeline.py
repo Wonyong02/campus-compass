@@ -3,7 +3,7 @@ from datetime import datetime
 
 from scrape_events import scrape_all_events
 from geocode_events import geocode_location
-from priority_agent import prioritize_events
+from priority_agent import build_agent_input, prioritize_events
 
 # Change this to personalize the pipeline's output for a different student
 STUDENT_PROFILE = {
@@ -26,20 +26,7 @@ def build_pipeline(months_ahead: int = 3) -> list[dict]:
     print("  -> done\n")
 
     print("Step 3/3: Running Strands Agent to prioritize events...")
-    agent_input = []
-    id_lookup = {}
-    for i, ev in enumerate(raw_events):
-        if not ev.get("title"):
-            continue
-        agent_input.append({
-            "id": i,
-            "title": ev["title"],
-            "date": ev.get("date"),
-            "time": ev.get("time"),
-            "location": ev.get("location"),
-            "description": (ev.get("description") or "")[:300],
-        })
-        id_lookup[i] = ev
+    agent_input, id_lookup = build_agent_input(raw_events)
 
     ranked = prioritize_events(STUDENT_PROFILE, agent_input)
     print(f"  -> {len(ranked)} events ranked\n")

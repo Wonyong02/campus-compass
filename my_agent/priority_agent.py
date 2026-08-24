@@ -40,15 +40,25 @@ def build_agent() -> Agent:
     return Agent(system_prompt=PRIORITY_SYSTEM_PROMPT)
 
 
-def load_events(path: str = EVENTS_FILE) -> list[dict]:
-    with open(path) as f:
-        raw_events = json.load(f)
+def build_agent_input(raw_events: list[dict]) -> tuple[list[dict], dict[int, dict]]:
+    """Turns raw scraped(+geocoded) events into the trimmed shape the agent
+    expects (id, title, date, time, location, description capped at 300
+    chars), skipping anything the scraper couldn't parse a title for.
 
-    events = []
+    Returns (agent_input, id_lookup): agent_input is what goes in the prompt,
+    id_lookup maps each assigned id back to the *original* event dict so a
+    caller can merge the agent's tier/reason onto the full record afterward.
+
+    This used to be copy-pasted in three places (here, pipeline.py, and
+    app.py) -- now pipeline.py and app.py both call this instead of keeping
+    their own copy of the skip/trim logic in sync by hand.
+    """
+    agent_input = []
+    id_lookup = {}
     for i, ev in enumerate(raw_events):
         if not ev.get("title"):
             continue  # skip anything the scraper couldn't parse cleanly
-        events.append({
+        agent_input.append({
             "id": i,
             "title": ev["title"],
             "date": ev.get("date"),
@@ -56,7 +66,15 @@ def load_events(path: str = EVENTS_FILE) -> list[dict]:
             "location": ev.get("location"),
             "description": (ev.get("description") or "")[:300],  # keep the prompt lean
         })
-    return events
+        id_lookup[i] = ev
+    return agent_input, id_lookup
+
+
+def load_events(path: str = EVENTS_FILE) -> list[dict]:
+    with open(path) as f:
+        raw_events = json.load(f)
+    agent_input, _ = build_agent_input(raw_events)
+    return agent_input
 
 
 def prioritize_events(student_profile: dict, events: list[dict]) -> list[dict]:
