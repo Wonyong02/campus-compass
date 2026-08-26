@@ -358,8 +358,59 @@
       </select>
     </div>
     <div class="profile-panel-row">
-      <label>Major</label>
-      <input type="text" id="inputMajor" placeholder="e.g. Computer Science">
+      <label>Major / Intended Major</label>
+      <input
+        type="text"
+        id="inputMajor"
+        list="majorOptions"
+        placeholder="Search your major..."
+        autocomplete="off"
+      >
+
+      <datalist id="majorOptions">
+        <option value="Accounting">
+        <option value="Administration of Justice">
+        <option value="Anthropology">
+        <option value="Art">
+        <option value="Art History">
+        <option value="Biology">
+        <option value="Business Administration">
+        <option value="Chemistry">
+        <option value="Child Development">
+        <option value="Cognitive Science">
+        <option value="Communication Studies">
+        <option value="Computer Science">
+        <option value="Cybersecurity">
+        <option value="Data Science">
+        <option value="Economics">
+        <option value="Engineering">
+        <option value="English">
+        <option value="Environmental Science">
+        <option value="Film / Television">
+        <option value="Geography">
+        <option value="Geology">
+        <option value="Global Studies">
+        <option value="Graphic Design">
+        <option value="Health Sciences">
+        <option value="History">
+        <option value="Humanities">
+        <option value="Journalism">
+        <option value="Kinesiology">
+        <option value="Linguistics">
+        <option value="Mathematics">
+        <option value="Music">
+        <option value="Nursing">
+        <option value="Paralegal Studies">
+        <option value="Philosophy">
+        <option value="Photography">
+        <option value="Physics">
+        <option value="Political Science">
+        <option value="Psychology">
+        <option value="Public Health">
+        <option value="Sociology">
+        <option value="Studio Art">
+        <option value="Undeclared / Undecided">
+      </datalist>
     </div>
     <div class="profile-panel-row">
       <label>Interests</label>
@@ -417,7 +468,11 @@ const STORAGE_KEY = "campusCompassProfile";
 let INTEREST_OPTIONS = ["career", "academic", "transfer", "hackathon", "club", "sports", "art", "social", "international"];
 
 let GENERATED_AT = "2026-08-23T18:53:16.523889";
-let STUDENT_PROFILE = { year: "sophomore", major: "Computer Science", interests: ["career", "academic"] };
+let STUDENT_PROFILE = {
+  year: "sophomore",
+  major: "",
+  interests: []
+};
 // True only once the student has actually clicked a chip themselves in this
 // page load. Keeps renderInterestChips() from "preserving" a stale render
 // (e.g. fetchRealCategories()'s fast /api/categories call finishing before
@@ -482,9 +537,24 @@ function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
 
 function renderProfileBanner(){
   const el = document.getElementById("profileBanner");
-  const interestList = STUDENT_PROFILE.interests.length ? STUDENT_PROFILE.interests.join(", ") : "no interests set";
-  const generatedDate = new Date(GENERATED_AT).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  el.innerHTML = `Personalized for <strong>${capitalize(STUDENT_PROFILE.year)} · ${STUDENT_PROFILE.major}</strong> (${interestList}) · generated ${generatedDate}`;
+
+  if (!STUDENT_PROFILE.major) {
+    el.innerHTML = `<strong>General Campus Events</strong> · choose a major to personalize`;
+    return;
+  }
+
+  const interestList = STUDENT_PROFILE.interests.length
+    ? STUDENT_PROFILE.interests.join(", ")
+    : "no interests set";
+
+  const generatedDate = new Date(GENERATED_AT).toLocaleDateString(
+    "en-US",
+    { month: "short", day: "numeric" }
+  );
+
+  el.innerHTML =
+    `Personalized for <strong>${capitalize(STUDENT_PROFILE.year)} · ${STUDENT_PROFILE.major}</strong> ` +
+    `(${interestList}) · generated ${generatedDate}`;
 }
 
 /* Shown the instant we know there's a saved profile to restore, since the
@@ -779,7 +849,6 @@ initMap();
 initProfilePanel();
 renderData();
 fetchRealCategories();
-tryAutoPersonalize();
 </script>
 </body>
 </html>
