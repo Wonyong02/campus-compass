@@ -46,6 +46,28 @@ CORS(app)  # the map page is opened as a local file / localhost, so allow any or
 
 _events_cache = None
 
+GENERAL_IMPORTANT_KEYWORDS = [
+    "transfer",
+    "tag",
+    "uc application",
+    "csu application",
+    "registration",
+    "enrollment",
+    "financial aid",
+    "scholarship",
+    "graduation",
+    "academic deadline",
+]
+
+
+def is_generally_important_event(event: dict) -> bool:
+    text = " ".join([
+        event.get("title") or "",
+        event.get("description") or "",
+    ]).lower()
+
+    return any(keyword in text for keyword in GENERAL_IMPORTANT_KEYWORDS)
+
 
 def load_or_scrape_events(force_refresh: bool = False) -> list[dict]:
     """Returns the scraped+geocoded event list, backed by events.db so we
@@ -111,6 +133,13 @@ def rerank():
         ev = dict(id_lookup[item["id"]])
         ev["tier"] = item.get("tier") if item.get("tier") in ("high", "medium", "low") else "low"
         ev["reason"] = item.get("reason") or "No reason given by the agent."
+
+        # Broadly important student information should never be hidden as LOW
+        # just because it does not match the student's major.
+        if ev["tier"] == "low" and is_generally_important_event(ev):
+            ev["tier"] = "medium"
+            ev["reason"] = "Broadly useful student information regardless of major."
+
         final_events.append(ev)
 
     if skipped_ids:
@@ -124,9 +153,23 @@ def rerank():
         print(f"[rerank] agent didn't rank {len(dropped_ids)} event(s), added as low priority: {dropped_ids}")
         for i in dropped_ids:
             ev = dict(id_lookup[i])
-            ev["tier"] = "low"
-            ev["reason"] = "Not ranked by the agent; shown as low priority by default."
+
+            if is_generally_important_event(ev):
+                ev["tier"] = "medium"
+                ev["reason"] = "Broadly useful student information regardless of major."
+            else:
+                ev["tier"] = "low"
+                ev["reason"] = "Not ranked by the agent; shown as low priority by default."
+
             final_events.append(ev)
+
+    tier_order = {
+    "high": 0,
+    "medium": 1,
+    "low": 2,
+    }
+
+    final_events.sort(key=lambda ev: tier_order.get(ev.get("tier"), 2))
 
     return jsonify({
         "generated_at": datetime.now().isoformat(),
