@@ -90,6 +90,18 @@
   }
   .edit-btn:hover{color:var(--paper);border-color:#465A70;}
 
+  #editProfileBtn{
+    background:#F4A62A;
+    color:#17212B;
+    border:1px solid #F4A62A;
+    font-weight:700;
+  }
+
+  #editProfileBtn:hover{
+    background:#FFB83E;
+    border-color:#FFB83E;
+    color:#17212B;
+  }
   .profile-panel{
     position:absolute;
     top:56px;
@@ -114,7 +126,9 @@
     text-transform:uppercase;
   }
   .profile-panel-row select,
-  .profile-panel-row input[type="text"]{
+  .profile-panel-row input[type="text"],
+  .profile-panel-row input[type="email"],
+  .profile-panel-row input[type="password"]{
     width:100%;
     background:#101923;
     border:1px solid #2E3D4E;
@@ -124,6 +138,55 @@
     font-family:'Inter',sans-serif;
     font-size:12.5px;
   }
+  .email-notification-box{
+    margin-top:12px;
+    padding-top:12px;
+    border-top:1px solid #2E3D4E;
+}
+
+.email-actions{
+    display:flex;
+    gap:6px;
+    margin-top:7px;
+}
+
+.email-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    border-radius:7px;
+    padding:7px 10px;
+    cursor:pointer;
+}
+
+.email-subscribe-btn{
+    background:transparent;
+    color:#AEB6C0;
+    border:1px solid #2E3D4E;
+}
+
+.email-subscribe-btn:hover{
+    color:white;
+    border-color:#465A70;
+}
+
+.email-subscribe-btn.active{
+    background:var(--coral);
+    color:white;
+    border-color:var(--coral);
+}
+.email-unsubscribe-btn{
+    background:transparent;
+    color:#AEB6C0;
+    border:1px solid #2E3D4E;
+}
+
+#emailStatus{
+    display:block;
+    margin-top:6px;
+    font-size:10.5px;
+    color:#8B93A0;
+    line-height:1.4;
+}
   .interest-chips{display:flex;flex-wrap:wrap;gap:6px;}
   .chip{
     font-family:'IBM Plex Mono',monospace;
@@ -339,12 +402,69 @@
     <div class="brand">Campus<span class="dot">·</span>Compass <small>DE ANZA COLLEGE — LIVE SCRAPED DATA</small></div>
     <div class="profile-controls">
       <div class="profile-banner" id="profileBanner"></div>
-      <button class="edit-btn" id="editProfileBtn" type="button">Edit profile</button>
+
+      
+      <button class="edit-btn" id="signupBtn" type="button">
+        Sign up
+      </button>
+
+      <button class="edit-btn" id="loginBtn" type="button">
+        Log in
+      </button>
+
+      <span id="loggedInUser" style="display:none;"></span>
+
+      <button
+        class="edit-btn"
+        id="logoutBtn"
+        type="button"
+        style="display:none;"
+      >
+        Log out
+      </button>
+
+      <button class="edit-btn" id="editProfileBtn" type="button">
+        Edit profile
+      </button>
     </div>
   </div>
   <div class="ticker-wrap">
     <div class="ticker-label">PRIORITY FEED</div>
     <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+  
+  <div class="profile-panel hidden" id="authPanel">
+    <div class="profile-panel-row">
+      <label>Email</label>
+      <input
+        type="email"
+        id="authEmail"
+        placeholder="your@email.com"
+        autocomplete="email"
+      >
+    </div>
+
+    <div class="profile-panel-row">
+      <label>Password</label>
+      <input
+        type="password"
+        id="authPassword"
+        placeholder="At least 8 characters"
+        autocomplete="current-password"
+      >
+    </div>
+
+    <div class="profile-panel-actions">
+      <span id="authStatus"></span>
+
+      <button class="forget-btn" id="authCancelBtn" type="button">
+        Cancel
+      </button>
+
+      <button id="authSubmitBtn" type="button">
+        Continue
+      </button>
+    </div>
   </div>
 
   <div class="profile-panel hidden" id="profilePanel">
@@ -416,6 +536,37 @@
       <label>Interests</label>
       <div class="interest-chips" id="interestChips"></div>
     </div>
+
+    <div class="profile-panel-row email-notification-box">
+      <label>Daily Event Email</label>
+
+      <input
+        type="email"
+        id="inputEmail"
+        placeholder="your@email.com"
+        autocomplete="email"
+      >
+
+      <div class="email-actions">
+        <button
+          class="email-btn email-subscribe-btn"
+          id="subscribeEmailBtn"
+          type="button"
+        >
+          Get daily events
+        </button>
+
+        <button
+          class="email-btn email-unsubscribe-btn"
+          id="unsubscribeEmailBtn"
+          type="button"
+        >
+          Turn off
+        </button>
+      </div>
+
+      <span id="emailStatus"></span>
+    </div>
     <div class="profile-panel-actions">
       <span id="profileStatus"></span>
       <button class="forget-btn" id="forgetProfileBtn" type="button" title="Forget the profile saved on this browser">Forget</button>
@@ -465,6 +616,7 @@
 --------------------------------------------------------- */
 const BACKEND_URL = "http://localhost:5001";
 const STORAGE_KEY = "campusCompassProfile";
+const EMAIL_STORAGE_KEY = "campusCompassEmail";
 let INTEREST_OPTIONS = ["career", "academic", "transfer", "hackathon", "club", "sports", "art", "social", "international"];
 
 let GENERATED_AT = "2026-08-23T18:53:16.523889";
@@ -522,15 +674,18 @@ function locationLabel(ev){
   return prefix + ev.location;
 }
 
-function makeIcon(tier){
-  const sizes = { high: 38, medium: 30, low: 24 };
-  const size = sizes[tier] || 24;
-  return L.divIcon({
-    className: "",
-    html: `<div class="pin ${tier}"><div class="pin-inner">●</div></div>`,
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size]
-  });
+function makeIcon(tier, count = 1){
+    const sizes = { high: 38, medium: 30, low: 24 };
+    const size = sizes[tier] || 24;
+
+    const inside = count > 1 ? count : "●";
+
+    return L.divIcon({
+        className: "",
+        html: `<div class="pin ${tier}"><div class="pin-inner">${inside}</div></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size]
+    });
 }
 
 function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
@@ -609,17 +764,139 @@ function renderData(){
     return a.date.localeCompare(b.date);
   });
 
-  sorted.forEach(ev => {
-    if (ev.latitude == null || ev.longitude == null) return; // virtual / no-location events get no pin
-    const marker = L.marker([ev.latitude, ev.longitude], { icon: makeIcon(ev.tier) }).addTo(map);
-    const tierColor = ev.tier === "high" ? "#E85A4F" : ev.tier === "medium" ? "#D9922F" : "#5C7A93";
-    marker.bindPopup(`
-      <span class="popup-tag" style="background:${tierColor}">${formatDate(ev.date)} · ${ev.tier.toUpperCase()}</span>
-      <div class="popup-title">${ev.title}</div>
-      <div class="popup-reason">"${ev.reason}"</div>
-    `);
-    leafletMarkers.push({ ev, marker });
-  });
+  // Group events that share the same map location
+const locationGroups = new Map();
+
+sorted.forEach(ev => {
+    if (ev.latitude == null || ev.longitude == null) return;
+
+    // Round coordinates so events at the same place are grouped together
+    const key =
+        `${Number(ev.latitude).toFixed(6)},${Number(ev.longitude).toFixed(6)}`;
+
+    if (!locationGroups.has(key)) {
+        locationGroups.set(key, []);
+    }
+
+    locationGroups.get(key).push(ev);
+});
+
+locationGroups.forEach(events => {
+
+    // Highest-priority event determines the pin color
+    const representative = events.reduce((best, ev) => {
+        return TIER_RANK[ev.tier] < TIER_RANK[best.tier]
+            ? ev
+            : best;
+    }, events[0]);
+
+    const marker = L.marker(
+        [representative.latitude, representative.longitude],
+        {
+            icon: makeIcon(representative.tier, events.length)
+        }
+    ).addTo(map);
+
+
+    // Put every event at this location into the same popup
+    const popupContent = events.map((ev, index) => {
+
+        const tierColor =
+            ev.tier === "high" ? "#E85A4F" :
+            ev.tier === "medium" ? "#D9922F" :
+            "#5C7A93";
+
+        const divider =
+            index < events.length - 1
+                ? `<hr style="
+                    border:none;
+                    border-top:1px solid #ddd;
+                    margin:12px 0;
+                ">`
+                : "";
+
+        return `
+            <div class="popup-event">
+
+                <span
+                    class="popup-tag"
+                    style="background:${tierColor}"
+                >
+                    ${formatDate(ev.date)}
+                    ${ev.time ? " · " + ev.time : ""}
+                    · ${ev.tier.toUpperCase()}
+                </span>
+
+                <div class="popup-title">
+                    ${ev.title}
+                </div>
+
+                <div class="popup-reason">
+                    "${ev.reason}"
+                </div>
+
+                ${
+                    ev.url
+                    ? `
+                    <a
+                        href="${ev.url}"
+                        target="_blank"
+                        style="
+                            display:inline-block;
+                            margin-top:6px;
+                            font-size:12px;
+                            font-weight:600;
+                            text-decoration:none;
+                        "
+                    >
+                        View event →
+                    </a>
+                    `
+                    : ""
+                }
+
+            </div>
+
+            ${divider}
+        `;
+    }).join("");
+
+
+    marker.bindPopup(
+        `
+        ${
+            events.length > 1
+            ? `
+            <div style="
+                font-size:11px;
+                font-weight:600;
+                margin-bottom:10px;
+                opacity:.7;
+            ">
+                ${events.length} EVENTS AT THIS LOCATION
+            </div>
+            `
+            : ""
+        }
+
+        ${popupContent}
+        `,
+        {
+            maxWidth: 330,
+            maxHeight: 360
+        }
+    );
+
+
+    // Each agenda event points to the shared marker
+    events.forEach(ev => {
+        leafletMarkers.push({
+            ev,
+            marker
+        });
+    });
+
+});
 
   const agendaList = document.getElementById("agendaList");
   agendaList.innerHTML = "";
@@ -706,6 +983,31 @@ function clearStoredProfile(){
   try { localStorage.removeItem(STORAGE_KEY); } catch (err) { /* ignore */ }
 }
 
+function loadStoredEmail(){
+  try {
+    return localStorage.getItem(EMAIL_STORAGE_KEY) || "";
+  } catch (err) {
+    console.warn("Couldn't read saved email:", err);
+    return "";
+  }
+}
+
+function saveStoredEmail(email){
+  try {
+    localStorage.setItem(EMAIL_STORAGE_KEY, email);
+  } catch (err) {
+    console.warn("Couldn't save email:", err);
+  }
+}
+
+function clearStoredEmail(){
+  try {
+    localStorage.removeItem(EMAIL_STORAGE_KEY);
+  } catch (err) {
+    // ignore
+  }
+}
+
 /* ---------------- talking to the backend ---------------- */
 
 async function requestRerank(profile){
@@ -720,6 +1022,169 @@ async function requestRerank(profile){
   }
   return res.json();
 }
+
+async function requestSignup(email, password){
+  const res = await fetch(`${BACKEND_URL}/api/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email,
+      password,
+      year: document.getElementById("inputYear").value,
+      major: document.getElementById("inputMajor").value.trim(),
+      interests: Array.from(
+        document.querySelectorAll("#interestChips .chip.active")
+      ).map(c => c.textContent)
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || `Server returned ${res.status}`);
+  }
+
+  return data;
+}
+
+
+async function requestLogin(email, password){
+  const res = await fetch(`${BACKEND_URL}/api/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email,
+      password
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || `Server returned ${res.status}`);
+  }
+
+  return data;
+}
+
+async function requestMe(){
+  const res = await fetch(`${BACKEND_URL}/api/me`, {
+    method: "GET",
+    credentials: "include"
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || `Server returned ${res.status}`);
+  }
+
+  return data;
+}
+
+async function requestLogout(){
+  const res = await fetch(`${BACKEND_URL}/api/logout`, {
+    method: "POST",
+    credentials: "include"
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.error || `Server returned ${res.status}`);
+  }
+
+  return data;
+}
+
+function updateAuthUI(user){
+  const signupBtn = document.getElementById("signupBtn");
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const loggedInUser = document.getElementById("loggedInUser");
+  const emailInput = document.getElementById("inputEmail");
+
+  if (user) {
+    signupBtn.style.display = "none";
+    loginBtn.style.display = "none";
+
+    loggedInUser.style.display = "inline";
+    loggedInUser.textContent = user.email;
+
+    logoutBtn.style.display = "inline-block";
+
+    // Use the logged-in account email automatically
+    emailInput.value = user.email;
+    emailInput.readOnly = true;
+
+    saveStoredEmail(user.email);
+
+  } else {
+    signupBtn.style.display = "inline-block";
+    loginBtn.style.display = "inline-block";
+
+    loggedInUser.style.display = "none";
+    loggedInUser.textContent = "";
+
+    logoutBtn.style.display = "none";
+
+    // Logged-out users can type an email manually
+    emailInput.readOnly = false;
+  }
+}
+
+async function requestSubscribe(email, profile){
+  const res = await fetch(`${BACKEND_URL}/api/subscribe`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email,
+      year: profile.year,
+      major: profile.major,
+      interests: profile.interests
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.error || `Server returned ${res.status}`
+    );
+  }
+
+  return data;
+}
+
+
+async function requestUnsubscribe(email){
+  const res = await fetch(`${BACKEND_URL}/api/unsubscribe`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.error || `Server returned ${res.status}`
+    );
+  }
+
+  return data;
+}
+
 
 async function fetchRealCategories(){
   try {
@@ -767,6 +1232,20 @@ function renderInterestChips(){
 function initProfilePanel(){
   document.getElementById("inputYear").value = STUDENT_PROFILE.year;
   document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
+
+  const storedEmail = loadStoredEmail();
+
+  document.getElementById("inputEmail").value =
+    storedEmail;
+
+  if (storedEmail) {
+    const subscribeBtn =
+      document.getElementById("subscribeEmailBtn");
+
+    subscribeBtn.classList.add("active");
+    subscribeBtn.textContent = "Subscribed ✓";
+  }
+
   renderInterestChips();
 
   document.getElementById("editProfileBtn").onclick = () => {
@@ -812,6 +1291,217 @@ function initProfilePanel(){
     clearStoredProfile();
     document.getElementById("profileStatus").textContent = "Forgot saved profile on this browser.";
   };
+  document.getElementById("subscribeEmailBtn").onclick = async () => {
+
+    const email =
+      document.getElementById("inputEmail").value.trim();
+
+    const year =
+      document.getElementById("inputYear").value;
+
+    const major =
+      document.getElementById("inputMajor").value.trim();
+
+    const interests = Array.from(
+      document.querySelectorAll(
+        "#interestChips .chip.active"
+      )
+    ).map(c => c.textContent);
+
+    const statusEl =
+      document.getElementById("emailStatus");
+
+    if (!email) {
+      statusEl.textContent =
+        "Enter your email first.";
+      return;
+    }
+
+    if (!major) {
+      statusEl.textContent =
+        "Choose your major first.";
+      return;
+    }
+
+    statusEl.textContent =
+      "Saving your email notification settings...";
+
+    try {
+      await requestSubscribe(
+        email,
+        {
+          year,
+          major,
+          interests
+        }
+      );
+
+      saveStoredEmail(email);
+
+      const subscribeBtn =
+        document.getElementById("subscribeEmailBtn");
+
+      subscribeBtn.classList.add("active");
+      subscribeBtn.textContent = "Subscribed ✓";
+
+      statusEl.textContent =
+        "You'll receive personalized daily event emails.";
+
+    } catch (err) {
+      statusEl.textContent =
+        `Couldn't subscribe: ${err.message}`;
+
+      console.error(err);
+    }
+  };
+
+
+  document.getElementById("unsubscribeEmailBtn").onclick = async () => {
+
+    const email =
+      document.getElementById("inputEmail").value.trim();
+
+    const statusEl =
+      document.getElementById("emailStatus");
+
+    if (!email) {
+      statusEl.textContent =
+        "Enter the email you want to unsubscribe.";
+      return;
+    }
+
+    statusEl.textContent =
+      "Turning off notifications...";
+
+    try {
+      await requestUnsubscribe(email);
+
+      clearStoredEmail();
+
+      const subscribeBtn =
+        document.getElementById("subscribeEmailBtn");
+
+      subscribeBtn.classList.remove("active");
+      subscribeBtn.textContent = "Get daily events";
+
+      statusEl.textContent =
+        "Daily email notifications are turned off.";
+
+    } catch (err) {
+      statusEl.textContent =
+        `Couldn't unsubscribe: ${err.message}`;
+
+      console.error(err);
+    }
+  };
+}
+
+let authMode = "signup";
+
+function initAuthPanel(){
+  const panel = document.getElementById("authPanel");
+  const emailInput = document.getElementById("authEmail");
+  const passwordInput = document.getElementById("authPassword");
+  const statusEl = document.getElementById("authStatus");
+  const submitBtn = document.getElementById("authSubmitBtn");
+
+  document.getElementById("signupBtn").onclick = () => {
+    authMode = "signup";
+    statusEl.textContent = "";
+    submitBtn.textContent = "Sign up";
+    panel.classList.remove("hidden");
+  };
+
+  document.getElementById("loginBtn").onclick = () => {
+    authMode = "login";
+    statusEl.textContent = "";
+    submitBtn.textContent = "Log in";
+    panel.classList.remove("hidden");
+  };
+
+  document.getElementById("authCancelBtn").onclick = () => {
+    panel.classList.add("hidden");
+  };
+
+  document.getElementById("logoutBtn").onclick = async () => {
+    try {
+      await requestLogout();
+      updateAuthUI(null);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  submitBtn.onclick = async () => {
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
+
+    if (!email || !password) {
+      statusEl.textContent = "Enter email and password.";
+      return;
+    }
+
+    submitBtn.disabled = true;
+
+    try {
+      if (authMode === "signup") {
+        statusEl.textContent = "Creating account...";
+
+        await requestSignup(email, password);
+
+        statusEl.textContent = "Account created successfully!";
+      } else {
+        statusEl.textContent = "Logging in...";
+
+        const data = await requestLogin(email, password);
+
+        updateAuthUI(data.user);
+
+        statusEl.textContent = "Logged in successfully!";
+      }
+
+      passwordInput.value = "";
+
+    } catch (err) {
+      statusEl.textContent = err.message;
+      console.error(err);
+
+    } finally {
+      submitBtn.disabled = false;
+    }
+  };
+}
+
+async function restoreLoginState(){
+  try {
+    const data = await requestMe();
+
+    if (data.logged_in) {
+      updateAuthUI(data.user);
+
+      STUDENT_PROFILE = {
+        year: data.user.year || "sophomore",
+        major: data.user.major || "",
+        interests: data.user.interests || []
+      };
+
+      document.getElementById("inputYear").value =
+        STUDENT_PROFILE.year;
+
+      document.getElementById("inputMajor").value =
+        STUDENT_PROFILE.major;
+
+      userEditedInterests = false;
+      renderInterestChips();
+
+      saveStoredProfile(STUDENT_PROFILE);
+
+    } else {
+      updateAuthUI(null);
+    }
+  } catch (err) {
+    console.warn("Couldn't restore login state:", err.message);
+  }
 }
 
 /* On load: if this browser already has a saved profile (no login, just
@@ -847,8 +1537,10 @@ async function tryAutoPersonalize(){
 
 initMap();
 initProfilePanel();
+initAuthPanel();
 renderData();
 fetchRealCategories();
+restoreLoginState();
 </script>
 </body>
 </html>
