@@ -39,6 +39,18 @@ def parse_date_heading(text: str) -> str | None:
         return None
 
 
+def is_past_event(event: dict, today_iso: str) -> bool:
+    """
+    True only when the event has a parsed date AND it's before today.
+
+    Events with no date at all (e.g. some deadline-style entries) are
+    NOT treated as past -- we simply don't know, and hiding them would
+    be a false negative, not an honest "this already happened."
+    """
+    date = event.get("date")
+    return bool(date) and date < today_iso
+
+
 def fetch(url: str) -> requests.Response | None:
     """Fetches a URL, returning None instead of crashing on failure."""
     try:
@@ -470,6 +482,22 @@ def scrape_all_events(
             seen_ids.add(event_id)
 
         deduped.append(ev)
+
+    # --------------------------------------------------
+    # 5. DROP EVENTS THAT HAVE ALREADY HAPPENED
+    # --------------------------------------------------
+    # Root-level filter: scrape_month_view() above always scrapes the
+    # WHOLE current month (including days before today), and De Anza's
+    # own pages don't filter this out either. Nothing downstream
+    # (db.py, app.py) re-checks dates, so this is the one place that
+    # actually needs to do it -- everything after this point should be
+    # able to assume "every event here is today or later."
+    today_iso = datetime.now().strftime("%Y-%m-%d")
+
+    deduped = [
+        ev for ev in deduped
+        if not is_past_event(ev, today_iso)
+    ]
 
     return deduped
 

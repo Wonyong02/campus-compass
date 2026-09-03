@@ -187,18 +187,33 @@
     color:#8B93A0;
     line-height:1.4;
 }
-  .interest-chips{display:flex;flex-wrap:wrap;gap:6px;}
-  .chip{
+  /* Interests chip picker (career/academic/transfer/etc.) was removed
+     2026-09-03: it had no structured backend grounding the way major and
+     year do -- it was just raw text handed to the agent with a single
+     vague "consider it" instruction (priority_agent.py rule 7), and most
+     of the 9 tags either duplicated GENERAL_EVENT_CATEGORIES (already
+     applied to every student regardless of selection) or matched no real
+     De Anza category at all. Worth reconsidering once scraping covers
+     enough categories/events to build a real per-tag mapping the way
+     MAJOR_EVENT_CATEGORIES does for majors (see event_category_map.py) --
+     until then it was UI complexity for close to zero effect on results. */
+
+  /* Read-only note showing which De Anza categories are already being
+     weighted higher because of the student's major -- not a picker, since
+     that grounding is computed server-side from major alone (see
+     renderCategoryInfo()). */
+  .category-info-row{
+    margin-top:10px;
+    padding-top:8px;
+    border-top:1px dashed #2E3D4E;
+  }
+  .category-info{
     font-family:'IBM Plex Mono',monospace;
     font-size:10.5px;
-    background:#101923;
-    color:#AEB6C0;
-    border:1px solid #2E3D4E;
-    border-radius:14px;
-    padding:4px 10px;
-    cursor:pointer;
+    line-height:1.6;
+    color:#8B93A0;
   }
-  .chip.active{background:var(--coral);border-color:var(--coral);color:white;}
+  .category-info strong{color:#AEB6C0;font-weight:600;}
   .profile-panel-actions{
     display:flex;
     align-items:center;
@@ -331,6 +346,18 @@
     letter-spacing:0.2px;
   }
   .agenda-head p{margin:0;font-size:12px;color:var(--text-dim);}
+  .range-filter{display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;}
+  .range-btn{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    background:transparent;
+    color:var(--text-dim);
+    border:1px solid var(--hair);
+    border-radius:12px;
+    padding:3px 9px;
+    cursor:pointer;
+  }
+  .range-btn.active{background:var(--coral);color:white;border-color:var(--coral);}
   .agenda-list{flex:1;overflow-y:auto;padding:8px 12px;}
   .card{
     background:white;
@@ -472,9 +499,7 @@
       <label>Year</label>
       <select id="inputYear">
         <option value="freshman">Freshman</option>
-        <option value="sophomore">Sophomore</option>
-        <option value="junior">Junior</option>
-        <option value="senior">Senior</option>
+        <option value="general">General student</option>
       </select>
     </div>
     <div class="profile-panel-row">
@@ -533,8 +558,15 @@
       </datalist>
     </div>
     <div class="profile-panel-row">
-      <label>Interests</label>
-      <div class="interest-chips" id="interestChips"></div>
+      <label>Personalization notes</label>
+
+      <div class="category-info-row" id="categoryInfoRow" style="display:none;">
+        <p class="category-info" id="categoryInfoText"></p>
+      </div>
+
+      <div class="category-info-row" id="yearInfoRow" style="display:none;">
+        <p class="category-info" id="yearInfoText"></p>
+      </div>
     </div>
 
     <div class="profile-panel-row email-notification-box">
@@ -581,6 +613,13 @@
     <div class="agenda-head">
       <h2 id="agendaTitle">Your Priorities</h2>
       <p id="agendaSub">Ranked by the Strands Agent, not a fixed formula</p>
+      <div class="range-filter" id="rangeFilter">
+        <button type="button" class="range-btn" data-range="1">Today</button>
+        <button type="button" class="range-btn" data-range="7">1 week</button>
+        <button type="button" class="range-btn" data-range="14">2 weeks</button>
+        <button type="button" class="range-btn active" data-range="30">1 month</button>
+        <button type="button" class="range-btn" data-range="all">All</button>
+      </div>
     </div>
     <div class="agenda-list" id="agendaList"></div>
     <div class="legend">
@@ -617,19 +656,17 @@
 const BACKEND_URL = "http://localhost:5001";
 const STORAGE_KEY = "campusCompassProfile";
 const EMAIL_STORAGE_KEY = "campusCompassEmail";
-let INTEREST_OPTIONS = ["career", "academic", "transfer", "hackathon", "club", "sports", "art", "social", "international"];
+// interests chip picker removed 2026-09-03 -- see the CSS comment above
+// .category-info-row for why. STUDENT_PROFILE.interests stays [] for now
+// (still sent to the backend, which handles an empty list fine); revisit
+// once there's a real per-tag category mapping worth building.
 
 let GENERATED_AT = "2026-08-23T18:53:16.523889";
 let STUDENT_PROFILE = {
-  year: "sophomore",
+  year: "general",
   major: "",
   interests: []
 };
-// True only once the student has actually clicked a chip themselves in this
-// page load. Keeps renderInterestChips() from "preserving" a stale render
-// (e.g. fetchRealCategories()'s fast /api/categories call finishing before
-// tryAutoPersonalize()'s slower /api/rerank call restores the real profile).
-let userEditedInterests = false;
 // True until real backend data (from /api/rerank) replaces EVENTS below.
 // EVENTS starts out as a snapshot generated on 2026-08-23 with real but
 // fixed dates -- once those dates are all in the past, showing them as if
@@ -639,6 +676,12 @@ let userEditedInterests = false;
 // always current, so the flag flips off and events render unfiltered.
 let STATIC_SNAPSHOT = true;
 const CAMPUS_CENTER = [37.3192806, -122.0447919];
+
+// Plain day counts from today, inclusive of today. "all" has no upper
+// bound -- it's just "everything scrape_events.py collected" (currently
+// up to months_ahead=3 worth of events; see scrape_events.py).
+const RANGE_DAYS = { "1": 1, "7": 7, "14": 14, "30": 30, "all": Infinity };
+let SELECTED_RANGE = "30";
 
 let EVENTS = [
   {"title":"University of California (UC) Application Workshop","date":"2026-08-25","time":"2:30 pm to 4:00 pm","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376791","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"high","reason":"UC application workshop is in 2 days, relevant for sophomore transfer planning."},
@@ -735,6 +778,29 @@ function isPastEvent(ev, todayIso){
   return !!ev.date && ev.date < todayIso;
 }
 
+// Same "don't hide what we can't verify" rule as isPastEvent(): an event
+// with no date at all always passes, regardless of which range is active.
+function isWithinSelectedRange(ev, todayIso, rangeDays){
+  if (!ev.date) return true;
+  if (ev.date < todayIso) return false; // never show past events, even on "all"
+  if (rangeDays === Infinity) return true;
+  const end = new Date(todayIso + "T00:00:00");
+  end.setDate(end.getDate() + rangeDays - 1);
+  const endIso = end.toISOString().slice(0, 10);
+  return ev.date <= endIso;
+}
+
+function initRangeFilter(){
+  document.querySelectorAll("#rangeFilter .range-btn").forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll("#rangeFilter .range-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      SELECTED_RANGE = btn.dataset.range;
+      renderData();
+    };
+  });
+}
+
 function renderData(){
   renderProfileBanner();
 
@@ -756,7 +822,23 @@ function renderData(){
     return;
   }
 
-  const sorted = [...source].sort((a, b) => {
+  // Narrow further to whichever range the student picked in the agenda
+  // header (Today / 1 week / 2 weeks / 1 month). This is
+  // separate from the STATIC_SNAPSHOT past-event guard above: that one
+  // detects "the whole demo snapshot is stale", this one is just "the
+  // student asked to see a shorter window."
+  const rangeFiltered = source.filter(ev => isWithinSelectedRange(ev, todayIso, RANGE_DAYS[SELECTED_RANGE]));
+
+  if (rangeFiltered.length === 0) {
+    document.getElementById("agendaList").innerHTML =
+      `<div style="padding:16px;color:var(--text-dim);font-size:12.5px;line-height:1.6;">No events in this range. Try a wider one above.</div>`;
+    document.getElementById("agendaSub").textContent = `0 events in this range, out of ${source.length} scraped`;
+    document.getElementById("tickerTrack").innerHTML =
+      `<span>No events in this range — try a wider one</span>`;
+    return;
+  }
+
+  const sorted = [...rangeFiltered].sort((a, b) => {
     const rankDiff = TIER_RANK[a.tier] - TIER_RANK[b.tier];
     if (rankDiff !== 0) return rankDiff;
     if (!a.date) return 1;
@@ -927,7 +1009,7 @@ locationGroups.forEach(events => {
 
   const highCount = sorted.filter(e => e.tier === "high").length;
   document.getElementById("agendaSub").textContent =
-    `${highCount} high-priority item${highCount === 1 ? "" : "s"} out of ${sorted.length} scraped events`;
+    `${highCount} high-priority item${highCount === 1 ? "" : "s"} out of ${sorted.length} in this range`;
 
   const tickerSource = sorted.slice(0, 6);
   const tickerItems = tickerSource.map(ev => {
@@ -1034,9 +1116,7 @@ async function requestSignup(email, password){
       password,
       year: document.getElementById("inputYear").value,
       major: document.getElementById("inputMajor").value.trim(),
-      interests: Array.from(
-        document.querySelectorAll("#interestChips .chip.active")
-      ).map(c => c.textContent)
+      interests: [] // no interest picker anymore -- see note near .category-info-row
     })
   });
 
@@ -1186,47 +1266,59 @@ async function requestUnsubscribe(email){
 }
 
 
-async function fetchRealCategories(){
-  try {
-    const res = await fetch(`${BACKEND_URL}/api/categories`);
-    if (!res.ok) return;
-    const data = await res.json();
-    const merged = new Set(INTEREST_OPTIONS);
-    (data.categories || []).forEach(c => merged.add(c));
-    INTEREST_OPTIONS = Array.from(merged);
-    renderInterestChips();
-  } catch (err) {
-    // backend not running yet -- keep the generic fallback list, no big deal
-    console.warn("Couldn't load real categories, using generic list:", err.message);
-  }
-}
-
 /* ---------------- profile panel wiring ---------------- */
 
-function renderInterestChips(){
-  const chipsWrap = document.getElementById("interestChips");
-  // Only trust the chips currently lit up in the DOM if the student actually
-  // clicked one themselves. Otherwise always derive from STUDENT_PROFILE --
-  // this is what stops an earlier automatic render (e.g. from
-  // fetchRealCategories(), which resolves fast) from "sticking" after
-  // tryAutoPersonalize() (slower) later updates STUDENT_PROFILE to the real
-  // saved interests.
-  const activeSet = userEditedInterests
-    ? new Set(Array.from(chipsWrap.querySelectorAll(".chip.active")).map(c => c.textContent))
-    : new Set(STUDENT_PROFILE.interests);
+// De Anza category grounding is computed server-side from the student's
+// major alone (see app.py's /api/rerank), so this is a read-only note
+// rather than a picker: it just explains what's already happening.
+function renderCategoryInfo(profile){
+  const row = document.getElementById("categoryInfoRow");
+  const textEl = document.getElementById("categoryInfoText");
+  const relevant = profile && profile.relevant_event_categories;
 
-  chipsWrap.innerHTML = "";
-  INTEREST_OPTIONS.forEach(tag => {
-    const chip = document.createElement("button");
-    chip.type = "button";
-    chip.className = "chip" + (activeSet.has(tag) ? " active" : "");
-    chip.textContent = tag;
-    chip.onclick = () => {
-      userEditedInterests = true;
-      chip.classList.toggle("active");
-    };
-    chipsWrap.appendChild(chip);
+  if (!relevant || !relevant.length) {
+    row.style.display = "none";
+    return;
+  }
+
+  // Built with DOM calls rather than innerHTML/template strings -- major
+  // and the category names ultimately trace back to user-editable fields,
+  // so this avoids echoing arbitrary HTML back into the page.
+  textEl.textContent = "";
+  textEl.append("As a ");
+  const majorEl = document.createElement("strong");
+  majorEl.textContent = profile.major;
+  textEl.append(majorEl, " major, events in ");
+
+  relevant.forEach((category, i) => {
+    const catEl = document.createElement("strong");
+    catEl.textContent = category;
+    textEl.append(catEl);
+    if (i < relevant.length - 1) textEl.append(" and ");
   });
+
+  textEl.append(" get an automatic priority boost -- no need to pick these yourself.");
+  row.style.display = "";
+}
+
+// Same idea as renderCategoryInfo(), for the year-based orientation-event
+// weighting from get_year_guidance() (see priority_agent.py rule 11).
+function renderYearInfo(profile){
+  const row = document.getElementById("yearInfoRow");
+  const textEl = document.getElementById("yearInfoText");
+  const guidance = profile && profile.year_guidance;
+
+  if (guidance === "boost") {
+    textEl.textContent =
+      "As a freshman, orientation and welcome events get an automatic priority boost.";
+    row.style.display = "";
+  } else if (guidance === "reduce") {
+    textEl.textContent =
+      "Since you're past your first year, orientation and welcome events are weighted lower -- you've likely already been through them.";
+    row.style.display = "";
+  } else {
+    row.style.display = "none";
+  }
 }
 
 function initProfilePanel(){
@@ -1246,8 +1338,6 @@ function initProfilePanel(){
     subscribeBtn.textContent = "Subscribed ✓";
   }
 
-  renderInterestChips();
-
   document.getElementById("editProfileBtn").onclick = () => {
     document.getElementById("profilePanel").classList.toggle("hidden");
   };
@@ -1255,7 +1345,7 @@ function initProfilePanel(){
   document.getElementById("applyProfileBtn").onclick = async () => {
     const year = document.getElementById("inputYear").value;
     const major = document.getElementById("inputMajor").value.trim();
-    const interests = Array.from(document.querySelectorAll("#interestChips .chip.active")).map(c => c.textContent);
+    const interests = []; // no interest picker anymore -- see note near .category-info-row
     const statusEl = document.getElementById("profileStatus");
     const btn = document.getElementById("applyProfileBtn");
 
@@ -1273,9 +1363,8 @@ function initProfilePanel(){
       GENERATED_AT = data.generated_at;
       STATIC_SNAPSHOT = false; // live data now -- always current, no more staleness filtering
       saveStoredProfile(STUDENT_PROFILE);
-      // STUDENT_PROFILE.interests now IS what's lit up in the DOM, so it's
-      // safe to go back to deriving chip state from the profile again.
-      userEditedInterests = false;
+      renderCategoryInfo(STUDENT_PROFILE);
+      renderYearInfo(STUDENT_PROFILE);
       statusEl.textContent = "Updated and saved -- this map will remember it next time you visit.";
       renderData();
       document.getElementById("profilePanel").classList.add("hidden");
@@ -1302,11 +1391,7 @@ function initProfilePanel(){
     const major =
       document.getElementById("inputMajor").value.trim();
 
-    const interests = Array.from(
-      document.querySelectorAll(
-        "#interestChips .chip.active"
-      )
-    ).map(c => c.textContent);
+    const interests = []; // no interest picker anymore -- see note near .category-info-row
 
     const statusEl =
       document.getElementById("emailStatus");
@@ -1480,7 +1565,7 @@ async function restoreLoginState(){
       updateAuthUI(data.user);
 
       STUDENT_PROFILE = {
-        year: data.user.year || "sophomore",
+        year: data.user.year || "general",
         major: data.user.major || "",
         interests: data.user.interests || []
       };
@@ -1490,9 +1575,6 @@ async function restoreLoginState(){
 
       document.getElementById("inputMajor").value =
         STUDENT_PROFILE.major;
-
-      userEditedInterests = false;
-      renderInterestChips();
 
       saveStoredProfile(STUDENT_PROFILE);
 
@@ -1520,7 +1602,8 @@ async function tryAutoPersonalize(){
     GENERATED_AT = data.generated_at;
     STATIC_SNAPSHOT = false; // live data now -- always current, no more staleness filtering
     renderData();
-    renderInterestChips();
+    renderCategoryInfo(STUDENT_PROFILE);
+    renderYearInfo(STUDENT_PROFILE);
     document.getElementById("inputYear").value = STUDENT_PROFILE.year;
     document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
   } catch (err) {
@@ -1538,9 +1621,19 @@ async function tryAutoPersonalize(){
 initMap();
 initProfilePanel();
 initAuthPanel();
+initRangeFilter();
 renderData();
-fetchRealCategories();
-restoreLoginState();
+
+// Sequenced rather than fired in parallel: if the student is logged in,
+// restoreLoginState() saves their account profile to localStorage first,
+// so tryAutoPersonalize() (which reads localStorage) picks up that exact
+// profile and does the live /api/rerank call on top of it. Running them
+// in parallel would race the two localStorage reads/writes the same way
+// the old profile-chip race condition did (see PROJECT_LOG.md Section 13).
+(async () => {
+  await restoreLoginState();
+  await tryAutoPersonalize();
+})();
 </script>
 </body>
 </html>

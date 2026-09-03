@@ -6,6 +6,7 @@ from strands import Agent
 from event_category_map import (
     MAJOR_EVENT_CATEGORIES,
     GENERAL_EVENT_CATEGORIES,
+    ORIENTATION_KEYWORDS,
 )
 
 
@@ -114,6 +115,45 @@ def get_relevant_event_categories(major: str) -> list[str]:
     )
 
 
+def is_orientation_event(event: dict) -> bool:
+    """
+    True if the event's title or description reads as new-student
+    orientation content (see ORIENTATION_KEYWORDS -- De Anza has no
+    dedicated category for this, so it's keyword-based).
+    """
+    text = " ".join([
+        event.get("title") or "",
+        event.get("description") or "",
+    ]).lower()
+
+    return any(
+        keyword in text
+        for keyword in ORIENTATION_KEYWORDS
+    )
+
+
+def get_year_guidance(year: str) -> str:
+    """
+    De Anza is a community college, not a fixed 4-year track -- students
+    commonly take anywhere from about 1.5 to 3+ years to finish, so
+    "year" here is a rough self-reported stage, not a precise count.
+    The one clear signal it still gives us: a freshman hasn't likely
+    been through orientation yet, and a sophomore-or-later student
+    almost certainly has.
+
+    Returns "boost", "reduce", or "neutral" -- interpreted by
+    PRIORITY_SYSTEM_PROMPT alongside each event's is_orientation_event
+    flag.
+    """
+    if year == "freshman":
+        return "boost"
+
+    if year in ("sophomore", "junior", "senior"):
+        return "reduce"
+
+    return "neutral"
+
+
 PRIORITY_SYSTEM_PROMPT = """
 You are a campus event prioritization assistant.
 
@@ -126,8 +166,10 @@ You will be given:
   - interests
   - relevant_event_categories
   - general_event_categories
+  - year_guidance
 - a list of real campus events
 - each event may contain a De Anza event category
+- each event has an is_orientation_event flag
 
 Rank EVERY event for the student.
 
@@ -183,6 +225,25 @@ If category is null or missing, judge the event using its title,
 description, date, location, student major, major_family,
 interests, and general importance.
 
+11. Use year_guidance together with each event's is_orientation_event flag.
+
+De Anza is a community college, not a fixed 4-year track, so year is a
+rough self-reported stage rather than a precise count of time enrolled.
+Still:
+
+If year_guidance is "boost" (freshman), treat is_orientation_event
+events as a strong positive signal -- these are especially useful right
+now and should usually be HIGH.
+
+If year_guidance is "reduce" (sophomore, junior, or senior), treat
+is_orientation_event events as low relevance -- this student has almost
+certainly already been through orientation. These should rarely be HIGH
+unless something else about the event independently justifies it (e.g.
+it is also a hard academic deadline).
+
+If year_guidance is "neutral", judge is_orientation_event events like
+any other event, with no boost or reduction.
+
 Priority guidance:
 
 HIGH:
@@ -190,6 +251,7 @@ HIGH:
 - OR especially relevant to the student's exact major
 - OR strongly relevant through a matching De Anza event category
 - OR highly valuable for the student's major family and interests
+- OR an orientation event and year_guidance is "boost"
 
 MEDIUM:
 - useful to most students
@@ -199,6 +261,8 @@ MEDIUM:
 
 LOW:
 - genuinely unlikely to be useful to this student
+- OR an orientation event and year_guidance is "reduce", with nothing
+  else about the event making it independently important
 
 Do NOT assign LOW only because an event does not exactly match
 the student's major.
@@ -311,6 +375,11 @@ def build_agent_input(
             # Official De Anza event category
             "category": ev.get("category"),
 
+            # Keyword-detected (see ORIENTATION_KEYWORDS) -- interpreted
+            # alongside the student profile's year_guidance in
+            # PRIORITY_SYSTEM_PROMPT rule 11.
+            "is_orientation_event": is_orientation_event(ev),
+
             "description": (
                 ev.get("description") or ""
             )[:300],
@@ -379,6 +448,13 @@ def prioritize_events(
     profile_for_agent[
         "general_event_categories"
     ] = GENERAL_EVENT_CATEGORIES
+
+    # Whether orientation-type events should be boosted, reduced, or
+    # judged normally for this student's year (see get_year_guidance()
+    # and PRIORITY_SYSTEM_PROMPT rule 11).
+    profile_for_agent["year_guidance"] = get_year_guidance(
+        student_profile.get("year", "")
+    )
 
     payload = {
         "today": datetime.now().strftime(
