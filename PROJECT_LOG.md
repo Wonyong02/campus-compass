@@ -530,3 +530,227 @@ conversationally, not just via the `/api/rerank` REST path.
   dependency was declared for hashing/sessions/email despite the
   feature scope; worth double-checking `app.py`'s imports match what's
   actually installed
+## 19. Personalization Cleanup, Date-Range Filter, and Year-Based Weighting (2026-09-03)
+
+### 19.1 Interests chip picker removed
+
+The original Interests panel mixed two very different things into one
+flat row of chips: a fixed set of generic tags (career, academic,
+transfer, hackathon, club, sports, art, social, international) and, for
+a while, the real De Anza event category names pulled from
+`/api/categories`. Auditing what actually happened to a selected chip
+turned up the real problem: unlike `major` (three layers of structured
+grounding -- exact match, `major_family`, `relevant_event_categories`)
+and the new `year_guidance` (Section 19.5), `interests` had **no
+structured backend handling at all**. It was raw text handed to the
+agent with a single line in the system prompt ("Interests are
+preference signals, not filters") and nothing computed from it.
+
+Auditing the 9 tags against the real De Anza category list:
+
+| Tag | Outcome |
+|---|---|
+| career, transfer, club | Already duplicated by `GENERAL_EVENT_CATEGORIES`, applied to every student regardless of selection |
+| academic, social | Too generic to map to any De Anza category |
+| hackathon, sports | No matching De Anza category exists -- would essentially never match real scraped events |
+| art | Maps to the real "Creative Arts" category |
+| international | Maps to the real "Intercultural/International Studies" category |
+
+Net effect: at most 2 of 9 tags could plausibly change anything, and
+even those had no real grounding wired up. The picker was UI
+complexity for close to zero effect on ranking results -- the same
+failure mode as the De Anza category chip picker removed earlier this
+session (Section 19.2).
+
+**Decision:** remove the picker entirely rather than half-fix it.
+`STUDENT_PROFILE.interests` now stays `[]` and is sent to the backend
+as an empty array on every request (`/api/signup`, `/api/rerank`,
+`/api/subscribe`); the backend already handles an empty list without
+any special-casing. A comment was left in `campus_map_prototype.html`
+(next to `.category-info-row`) documenting why it was removed and
+noting it's worth reconsidering once scraping covers enough
+categories/events to build a real per-tag mapping the way
+`MAJOR_EVENT_CATEGORIES` does for majors.
+
+Removed: `GENERAL_INTEREST_OPTIONS`, `getActiveInterestTags()`,
+`makeInterestChip()`, `renderInterestChips()`, the
+`userEditedInterests` flag, the `.chip` / `.interest-chips` CSS, and
+the `<label>Interests</label>` + chip container markup.
+
+### 19.2 Read-only grounding notes replace the category chip picker
+
+Earlier in the session, before being removed outright, the De Anza
+category chips (12 official categories, some quite long -- e.g.
+"Business, Computer Science and Applied Technologies") went through
+the same audit and turned up the same problem: `relevant_event_categories`
+is computed **entirely server-side from `major`**
+(`get_relevant_event_categories()` in `priority_agent.py`); manually
+clicking a category chip changed nothing about the ranking.
+
+Rather than leave a non-functional picker, `/api/rerank`'s response now
+surfaces the already-computed grounding directly:
+
+```python
+response_profile["relevant_event_categories"] = get_relevant_event_categories(
+    profile["major"]
+)
+```
+
+The frontend renders this as a plain, non-interactive sentence under a
+"Personalization notes" label, e.g.:
+
+> As a **Computer Science** major, events in **Business, Computer
+> Science and Applied Technologies** get an automatic priority boost --
+> no need to pick these yourself.
+
+Built with DOM calls (`createElement` + `textContent`) rather than
+`innerHTML`/template strings, since `major` traces back to a
+user-editable field and shouldn't be echoed back as raw HTML.
+
+### 19.3 Date-range filter for the agenda
+
+Added a small button row (Today / 1 week / 2 weeks / 1 month / All) to
+the agenda header, letting the student narrow the map + agenda + ticker
+to a specific window instead of always seeing everything currently
+scraped:
+
+```js
+const RANGE_DAYS = { "1": 1, "7": 7, "14": 14, "30": 30, "all": Infinity };
+```
+
+`isWithinSelectedRange()` filters on top of the existing
+`isPastEvent()` staleness guard; an event with no date always passes
+(same "don't hide what we can't verify" principle used elsewhere), and
+past events are excluded even on "All". Selecting a range with zero
+matching events shows a small inline "No events in this range" message
+instead of an empty panel.
+
+An earlier version included a "This quarter" option defined as
+`Infinity` (no upper bound); it was removed at the user's request in
+favor of exactly the four fixed windows above.
+
+### 19.4 Past-event filtering moved to scrape time
+
+Previously, nothing in the scrape → DB → API pipeline filtered out
+events whose date had already passed -- `scrape_month_view()` always
+scrapes the *entire* current month (including days before today), and
+neither `db.py` nor `app.py` ever added a `WHERE date >= today`
+equivalent. The only past-event filter that existed
+(`isPastEvent()` in the frontend) only applied to the hardcoded
+offline demo snapshot, not to live scraped data.
+
+Fixed at the root, in `scrape_events.py`:
+
+```python
+def is_past_event(event: dict, today_iso: str) -> bool:
+    date = event.get("date")
+    return bool(date) and date < today_iso
+```
+
+Applied as a final step in `scrape_all_events()`, after de-duplication.
+Events with no date at all are kept (can't verify they're past).
+`events.db` self-heals on the next `/api/refresh` or scheduled scrape,
+since `save_events()` already wipes and re-inserts on every run.
+
+### 19.5 Year-based orientation-event weighting
+
+Added a second structured grounding signal, alongside major's, for
+`year`. De Anza is a community college, not a fixed 4-year track
+(students commonly take 1.5-3+ years), so a finer breakdown than
+freshman-vs-everyone-else doesn't map onto real student timelines
+cleanly. The `year` field was simplified from four options
+(freshman/sophomore/junior/senior) to two: **Freshman** / **General
+student**.
+
+New in `event_category_map.py`:
+
+```python
+ORIENTATION_KEYWORDS = [
+    "orientation", "welcome day", "welcome week",
+    "new student", "first-year experience", "first year experience",
+]
+```
+
+De Anza has no dedicated official category for orientation-type events
+(e.g. "Welcome Day" is actually tagged "Student Services and
+Resources"), so detection is keyword-based on title/description rather
+than category-based.
+
+New in `priority_agent.py`:
+
+```python
+def is_orientation_event(event: dict) -> bool: ...   # keyword match, per event
+def get_year_guidance(year: str) -> str:              # "boost" | "reduce" | "neutral"
+    if year == "freshman":
+        return "boost"
+    if year == "general":
+        return "reduce"
+    return "neutral"
+```
+
+`build_agent_input()` now attaches `is_orientation_event` to every
+event sent to the agent (alongside the existing `category` field), and
+`prioritize_events()` adds `year_guidance` to the student profile.
+`PRIORITY_SYSTEM_PROMPT` gained a new rule (11) instructing the agent
+to boost orientation events to HIGH when `year_guidance` is "boost",
+and to keep them LOW (absent an independent reason like a hard
+deadline) when it's "reduce".
+
+`/api/rerank` surfaces `year_guidance` in its response the same way it
+does `relevant_event_categories`, and the frontend renders a second
+read-only sentence under the same "Personalization notes" section,
+e.g. *"As a freshman, orientation and welcome events get an automatic
+priority boost."*
+
+### 19.6 Fixed `tryAutoPersonalize()` never being called
+
+`tryAutoPersonalize()` -- the function responsible for automatically
+re-running `/api/rerank` on page load using a saved profile -- was
+fully implemented but never actually invoked anywhere; the bottom of
+`campus_map_prototype.html` only called `restoreLoginState()`. In
+practice this meant: a returning student (logged in or not) always saw
+the static/stale event set on load and had to manually hit "Update
+priorities" to get a live, personalized re-rank.
+
+Fixed by sequencing the two calls explicitly rather than leaving one
+out:
+
+```js
+(async () => {
+  await restoreLoginState();
+  await tryAutoPersonalize();
+})();
+```
+
+Sequenced rather than parallel on purpose: `restoreLoginState()` saves
+the logged-in account's profile to `localStorage` first, so
+`tryAutoPersonalize()` (which reads `localStorage`) picks up that exact
+profile before doing the live rerank. Running them in parallel would
+reproduce the same class of race condition already fixed once for the
+profile chips (see Section 13).
+
+### 19.7 Known limitations / next steps
+
+- Interests: intentionally removed for now (19.1). Revisit once
+  scraping covers enough distinct categories/events to justify a real
+  per-tag `INTEREST_EVENT_CATEGORIES`-style mapping.
+- `year_guidance` currently only affects orientation-type events. It
+  isn't (yet) used for anything else a freshman vs. general student
+  might care about differently.
+- The date-range filter (19.3) is purely client-side over whatever
+  `scrape_events.py` already collected (`months_ahead=3`); there's no
+  server-side "give me just this week" endpoint, so selecting "All"
+  is still bounded by what was scraped, not by De Anza's full calendar.
+- `major_family` is computed and sent to the agent but still isn't
+  surfaced to the frontend as a read-only note the way
+  `relevant_event_categories` and `year_guidance` are.
+
+### 19.8 GitHub
+
+- Branch: `personalization-updates`
+- Files touched: `my_agent/campus_map_prototype.html`, `my_agent/app.py`,
+  `my_agent/scrape_events.py`, `my_agent/priority_agent.py`,
+  `my_agent/event_category_map.py`
+- Opened as a PR against `main` rather than pushed directly, since
+  `Bashipark1` is still an active contributor and hadn't seen any of
+  this work before it landed.
