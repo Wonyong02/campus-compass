@@ -22,7 +22,7 @@ from pathlib import Path
 import db as eventsdb
 from scrape_events import scrape_all_events
 from geocode_events import geocode_location
-from priority_agent import build_agent_input, prioritize_events
+from priority_agent import build_agent_input, prioritize_events, get_relevant_event_categories, get_year_guidance
 
 
 app = Flask(__name__)
@@ -314,10 +314,26 @@ def rerank():
         )
     )
 
+    # Surface the same major -> category grounding the agent used, so the
+    # frontend can show it as a read-only note instead of asking the
+    # student to re-pick categories that are already derived from their
+    # major (see priority_agent.py's "interests are preference signals,
+    # not filters" rule -- manually selecting a category here never
+    # changed the ranking).
+    response_profile = dict(profile)
+    response_profile["relevant_event_categories"] = get_relevant_event_categories(
+        profile["major"]
+    )
+    # Same idea for year: surface whether orientation events are being
+    # boosted/reduced for this student's year (see priority_agent.py's
+    # get_year_guidance() and PRIORITY_SYSTEM_PROMPT rule 11).
+    response_profile["year_guidance"] = get_year_guidance(
+        profile.get("year", "")
+    )
 
     return jsonify({
         "generated_at": datetime.now().isoformat(),
-        "student_profile": profile,
+        "student_profile": response_profile,
         "events": final_events,
     })
 

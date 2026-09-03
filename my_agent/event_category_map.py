@@ -190,3 +190,19 @@ GENERAL_EVENT_CATEGORIES = [
     "Transfer University Representative",
     "Transfer Workshop",
 ]
+
+
+# De Anza doesn't have a dedicated official category for new-student
+# orientation (e.g. "Welcome Day" actually gets tagged "Student Services
+# and Resources" -- see CATEGORY_SOURCES above), so orientation-type
+# events are detected by title/description keywords instead of category.
+# Used to boost these for freshmen and de-emphasize them for students who
+# have almost certainly already been through orientation.
+ORIENTATION_KEYWORDS = [
+    "orientation",
+    "welcome day",
+    "welcome week",
+    "new student",
+    "first-year experience",
+    "first year experience",
+]
