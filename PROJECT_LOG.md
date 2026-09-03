@@ -56,6 +56,11 @@ re-run on every profile edit. `pipeline.py` still exists as a standalone
 script that chains scrape → geocode → prioritize → static JSON snapshot,
 useful for offline testing without the Flask server running.
 
+*(As of Section 18 below, this diagram is incomplete: `app.py` now also
+serves the frontend directly and exposes auth/subscription endpoints,
+and `agent.py` is a second, conversational entry point into the same
+event data.)*
+
 ## 3. Environment Setup
 
 - Python virtual environment: `python3 -m venv .venv` → `source .venv/bin/activate`
@@ -82,6 +87,9 @@ First working Strands agent — validated the whole toolchain (SDK,
 Bedrock auth, model access) using a trivial agent with `calculator`,
 `current_time`, and a custom `letter_counter` tool. This is the
 "hello world" checkpoint before building anything project-specific.
+
+*(Superseded 2026-09-02 — see Section 18.6: the demo tools were replaced
+with a real Campus Compass tool that reads from `events.db`.)*
 
 ## 5. Component: Map UI Prototype (`campus_map_prototype.html`, v1)
 
@@ -116,9 +124,14 @@ a fixed rule set doesn't capture.
 
 Output shape per event: `{ id, tier: "high"|"medium"|"low", reason }`.
 
+*(Extended 2026-08-28 — see Section 17.6: the agent now also receives
+De Anza event-category grounding alongside major/interests.)*
+
 ## 7. Component: Web Scraper (`scrape_events.py`)
 
-Target: `https://www.deanza.edu/events/` (De Anza College).
+Target: `https://deanza.edu/events/` (De Anza College). *(Base URL
+changed from `www.deanza.edu` to non-`www` on 2026-08-28 — see Section
+17.3; `www` was returning a 403.)*
 
 **Platform discovery:** Initially assumed this might run on Localist
 (a common campus calendar SaaS with a public JSON API) — it doesn't.
@@ -144,6 +157,9 @@ selector you assumed" are different questions.
   doesn't crash the whole scrape
 - Results from both templates are merged and de-duplicated by the
   numeric event ID embedded in each detail URL
+
+*(Extended 2026-08-28 — a third page type, `/events/category.html?c=...`,
+was added. See Section 17.2.)*
 
 ## 8. Component: Geocoding (`geocode_events.py`)
 
@@ -242,6 +258,9 @@ workshops as high priority). A single `/api/rerank` call takes roughly
 bug — which shaped both the database design (avoid re-scraping on that
 critical path) and the frontend UX (Section 13's loading indicator).
 
+*(Extended 2026-09-02 — `app.py` gained auth/subscription endpoints and
+now serves the frontend directly. See Section 18.)*
+
 ## 12. Component: Event Database (`db.py`, SQLite) + No-Login Profile Persistence
 
 **Product direction (explicit decision):** rather than building account
@@ -252,6 +271,10 @@ external service to provision for a hackathon-scale dataset), and the
 student's profile lives entirely in the browser's `localStorage`
 instead of a server-side user table.
 
+*(Updated 2026-09-02 — see Section 18.3–18.4: `users` and
+`subscribers` tables were added, and account-based login now exists
+alongside the original localStorage-only flow.)*
+
 **`events.db` (SQLite) stores:**
 - One `events` table: scraped + geocoded event data (title, date, time,
   location, category, description, url, coordinates, virtual flag,
@@ -260,14 +283,14 @@ instead of a server-side user table.
   the dataset is small (a few dozen events) and always comes from one
   fresh scrape, so no incremental upsert logic is needed
 
-**Deliberately NOT in the database:**
+**Deliberately NOT in the database (as of 2026-08-24):**
 - `tier` / `reason` — these are computed **per student profile** by
   `priority_agent.py` on every `/api/rerank` call, not an intrinsic
   property of an event. Persisting them would mean the next student
   with a different profile sees priorities computed for someone else.
 - `Users` / `Preferences` / `SavedEvents` tables — intentionally absent
-  under the no-login direction above. If/when real accounts get built,
-  `db.py`'s module docstring marks where those tables would go.
+  under the no-login direction above. *(A `users` table and account-linked
+  profile storage were added in Section 18.3–18.4.)*
 
 **Frontend (`campus_map_prototype.html`) changes:**
 - `localStorage` key `campusCompassProfile` stores `{ year, major,
@@ -307,11 +330,10 @@ shipping.
 
 ## 14. Known Limitations / Honest Caveats
 
-- **No login, by design.** A student's profile lives only in the
-  browser that set it — clearing browser data or switching devices
-  loses it. This is an intentional product tradeoff (see Section 12),
-  not an oversight, but it is a real limitation for a multi-device
-  student.
+- **Login is optional, not required.** A student's profile can still
+  live only in the browser that set it (localStorage), so nothing is
+  gated behind an account. Signing up (Section 18.3) additionally syncs
+  the profile and email notification preference to that account.
 - **Single data source.** Only De Anza's own events page is scraped.
   Real deployment would need per-school scraper configs, since every
   school's site structure differs (as seen firsthand: De Anza's own two
@@ -328,6 +350,7 @@ shipping.
   necessarily enough for a scheduled production scrape.
 - **Single-page frontend.** Map, agenda, ticker, and profile panel all
   live in one HTML file rather than separate Home/Events/Detail pages.
+  *(As of 9/2, auth/signup panels were added to this same file too.)*
 - **Flask's dev server is single-threaded**, and a `/api/rerank` call
   takes several real seconds (Bedrock latency) — acceptable for a
   hackathon demo, not production-grade concurrency.
@@ -336,9 +359,13 @@ shipping.
 
 - [x] ~~Backend endpoint for live profile-based re-ranking~~ — done, see Section 11
 - [x] ~~Minimal database~~ — done (SQLite), see Section 12
-- [ ] Notification logic (1-week / 1-day-before reminders) — closest to
-      the hackathon track's stated emphasis ("only ping you when
-      there's a real decision to make")
+- [x] ~~Major-based personalization / category grounding~~ — done, see Section 17
+- [x] ~~Map marker grouping for co-located events~~ — done, see Section 18.1
+- [ ] **Actual email delivery** — subscription storage exists (Section
+      18.2) but sending is not implemented yet. Closest to the
+      hackathon track's stated emphasis ("only ping you when there's a
+      real decision to make")
+- [ ] 1-week / 1-day-before reminder logic (builds on the above)
 - [ ] Separate Event Detail page + Filter/Search
 - [ ] Support additional schools / a config-driven scraper
 - [ ] Deploy the agent to Bedrock AgentCore Runtime (per hackathon resources)
@@ -352,3 +379,154 @@ shipping.
 - Submitted the $50 AWS Promotional Credits request (deadline: Sep 11,
   2026, 12pm PT — separate from the Sep 14 project deadline)
 - Track selected: **Everyday Agents**
+
+## 17. Major-Based Event Personalization (2026-08-28)
+
+**Goal:** the major selector already existed, but the agent had no
+grounded data connecting a given major to which De Anza event
+categories actually matter for it.
+
+### 17.1 New file: `event_category_map.py`
+
+Maps 25+ majors to relevant De Anza event categories (e.g. Computer
+Science / Data Science → "Business, Computer Science and Applied
+Technologies" + "Physical Sciences, Mathematics and Engineering";
+Biology / Health Sciences → "Biological, Health and Environmental
+Sciences"; Art / Graphic Design / Photography → "Creative Arts").
+Also defines a `GENERAL_EVENT_CATEGORIES` list that applies regardless
+of major (Career Training, Student Clubs and Organizations, Student
+Services and Resources, Transfer University Representative, Transfer
+Workshop).
+
+**Design principle: category is a relevance signal, not a strict
+filter.** An event outside a student's mapped categories is never
+hidden outright.
+
+### 17.2 Category-aware scraping
+
+Added `/events/category.html?c=...` as a third scrape target alongside
+the existing `/events/` and `/events/month.html` pages (Section 7).
+Category pages are scraped first so that when the same event exists in
+multiple sources, the category-tagged version wins during
+de-duplication by event ID.
+
+### 17.3 Fixed a real `403` on the `www` subdomain
+
+`https://www.deanza.edu/...` returned `403 Forbidden`; the bare
+`https://deanza.edu/...` domain worked. The scraper's base URL was
+changed to non-`www`.
+
+### 17.4 Handled HTML structure differences on category pages
+
+Some category pages don't use the `h4.event-title` / `h3.mb-0`
+selectors the main event page uses (plain `h4`/`h3` instead), which
+silently produced 0 results (e.g. "Student Services and Resources" —
+Welcome Day was on the page but not found). Added a fallback selector
+path, and stopped discarding an event entirely just because one
+expected container wasn't found.
+
+### 17.5 Live scrape verification (2026-08-28)
+
+**52 unique events** collected. Category distribution: `None` 39,
+Transfer University Representative 9, Transfer Workshop 4, Student
+Services and Resources 1. The high `None` count is expected — month/
+general list pages don't carry category metadata; the agent still
+judges those events from title/description/date/major/urgency.
+
+### 17.6 Category grounding wired into `priority_agent.py`
+
+Each event now carries a `category` field; each student profile now
+also carries `major_family`, `relevant_event_categories`, and
+`general_event_categories`. System-prompt rules: exact major match =
+strong signal, major-family match = related-field signal, De Anza
+category match = grounding signal (**not** an automatic HIGH),
+transfer/registration/academic-deadline events can be important
+regardless of major, and events with no category are still judged from
+their content.
+
+**Verified end-to-end:** the same real event ("San Jose State
+University Business Info Session") returned `MEDIUM` for a Computer
+Science profile ("less relevant to CS but covers transfer options")
+and `HIGH` for a Business Administration profile ("directly matches
+Business Administration major") via `/api/rerank` — confirming the
+same event now produces different, profile-appropriate priorities.
+
+### 17.7 GitHub
+
+- Branch: `major-data-personalization`
+- Commit: "Add major-based event personalization with De Anza
+  categories" (touching `event_category_map.py`, `priority_agent.py`,
+  `scrape_events.py`)
+- Merged to `main` via PR
+
+## 18. Map Marker Grouping, Email Subscription, and User Authentication (2026-09-02)
+
+### 18.1 Map marker grouping
+
+Events sharing the same coordinates previously rendered as overlapping
+pins. Co-located events are now grouped into a single marker; the
+marker shows a count and, on click, a popup lists every event at that
+location. Marker color is driven by the highest-priority event in the
+group.
+
+### 18.2 Email notification subscription (infrastructure only)
+
+- New `subscribers` SQLite table
+- Backend endpoints to subscribe/unsubscribe from daily event email
+- A "Daily Event Email" section added to the profile panel; email
+  address stored in `localStorage`; subscription-status UI added
+- A logged-in user's account email is used automatically for
+  notifications (the email field becomes read-only while logged in)
+- **Actual email delivery is not implemented yet** — this section
+  covers storage and UI only. See Section 15 for the follow-up.
+
+### 18.3 User authentication
+
+- New `users` SQLite table; passwords stored hashed
+- `POST /api/signup`, `POST /api/login`, `POST /api/logout`,
+  `GET /api/me` (session restore) added
+- Flask session support so login persists across page refreshes
+- **The frontend is now served directly by Flask** at
+  `http://localhost:5001` (rather than opened as a static file) so
+  sessions work correctly
+
+### 18.4 User profile persistence tied to accounts
+
+- Year/major/interests are now connected to user accounts
+- Editing the profile via "Update priorities" while logged in saves to
+  the account; saved profile is restored automatically after login or
+  page refresh
+
+### 18.5 Authentication UI
+
+- Sign up / Log in buttons, an auth panel for email/password input,
+  frontend integration with the signup/login APIs, logged-in email
+  display, and a Log out button
+- "Edit profile" button given a stronger accent color for visibility
+
+### 18.6 Strands Agent (`agent.py`) updated
+
+Replaced the original calculator / current-time / letter-counter demo
+tools (Section 4) with a Campus-Compass-specific Strands tool that
+loads real events from `events.db` and reuses the existing
+personalization/priority logic. The agent can now retrieve and
+summarize a student's personalized upcoming De Anza events
+conversationally, not just via the `/api/rerank` REST path.
+
+### 18.7 Current status
+
+- Signup/login work; login persists after refresh; profiles are stored
+  and restored correctly; subscription info can be stored
+- Co-located map events are handled correctly
+- **Actual daily email delivery has not been implemented yet**
+
+### 18.8 GitHub
+
+- Commit: `b668636` — "Add user auth, email subscription, and event
+  improvements"
+- Branch: `major-data-personalization` (same branch continued from
+  Section 17), merged to `main` via PR #3
+- `requirements.txt` unchanged by this commit — no new Python
+  dependency was declared for hashing/sessions/email despite the
+  feature scope; worth double-checking `app.py`'s imports match what's
+  actually installed
