@@ -355,9 +355,13 @@
   .pin.high{background:var(--coral);width:38px;height:38px;}
   .pin.medium{background:var(--amber);width:30px;height:30px;}
   .pin.low{background:var(--slate);width:24px;height:24px;}
+  .pin.ranking{background:#9AA3AD;width:30px;height:30px;}
+  
   .pin.high .pin-inner{font-size:16px;}
   .pin.medium .pin-inner{font-size:13px;}
   .pin.low .pin-inner{font-size:11px;}
+  .pin.ranking .pin-inner{font-size:13px;}
+
 
   .leaflet-popup-content-wrapper{border-radius:10px;font-family:'Inter',sans-serif;}
   .popup-tag{
@@ -418,6 +422,7 @@
   .card.high{border-left-color:var(--coral);}
   .card.medium{border-left-color:var(--amber);}
   .card.low{border-left-color:var(--slate);}
+  .card.ranking{border-left-color:#9AA3AD;}
   .card-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;}
   .card-tag{
     font-family:'IBM Plex Mono',monospace;
@@ -429,6 +434,7 @@
   .card.high .card-tag{color:var(--coral);}
   .card.medium .card-tag{color:var(--amber);}
   .card.low .card-tag{color:var(--slate);}
+  .card.ranking .card-tag{color:#9AA3AD;}
   .card-when{font-size:11px;color:var(--text-dim);text-align:right;}
   .card-title{font-weight:600;font-size:13.5px;margin-bottom:3px;}
   .card-loc{font-size:12px;color:var(--text-dim);margin-bottom:5px;}
@@ -1050,9 +1056,25 @@
     </div>
     <div class="agenda-list" id="agendaList"></div>
     <div class="legend">
-      <div class="legend-row"><span class="legend-dot" style="background:var(--coral)"></span> High — AI-judged urgent and relevant</div>
-      <div class="legend-row"><span class="legend-dot" style="background:var(--amber)"></span> Medium — relevant, not urgent</div>
-      <div class="legend-row"><span class="legend-dot" style="background:var(--slate)"></span> Low — lower relevance for this profile</div>
+      <div class="legend-row">
+        <span class="legend-dot" style="background:#9AA3AD"></span>
+        Ranking — AI is evaluating these events
+      </div>
+
+      <div class="legend-row">
+        <span class="legend-dot" style="background:var(--coral)"></span>
+        High — AI-judged urgent and relevant
+      </div>
+
+      <div class="legend-row">
+        <span class="legend-dot" style="background:var(--amber)"></span>
+        Medium — relevant, not urgent
+      </div>
+
+      <div class="legend-row">
+        <span class="legend-dot" style="background:var(--slate)"></span>
+        Low — lower relevance for this profile
+      </div>
     </div>
   </aside>
 </main>
@@ -1126,7 +1148,12 @@ let EVENTS = [
   {"title":"De Anza Flea Market","date":"2026-09-05","time":"8:00 am to 2:00 pm","location":"Parking Lots A & B","url":"https://www.deanza.edu/events/event.html?id=186205975","latitude":37.3205,"longitude":-122.043,"is_virtual":false,"match_type":"approximate","tier":"low","reason":"Flea market is not related to CS major or academic/career interests."}
 ];
 
-const TIER_RANK = { high: 0, medium: 1, low: 2 };
+const TIER_RANK = {
+  high: 0,
+  medium: 1,
+  low: 2,
+  ranking: 3
+};
 
 let map;
 let leafletMarkers = [];
@@ -1145,7 +1172,12 @@ function locationLabel(ev){
 }
 
 function makeIcon(tier, count = 1){
-    const sizes = { high: 38, medium: 30, low: 24 };
+    const sizes = {
+      high: 38,
+      medium: 30,
+      low: 24,
+      ranking: 30
+    };
     const size = sizes[tier] || 24;
 
     const inside = count > 1 ? count : "●";
@@ -1313,6 +1345,7 @@ locationGroups.forEach(events => {
         const tierColor =
             ev.tier === "high" ? "#E85A4F" :
             ev.tier === "medium" ? "#D9922F" :
+            ev.tier === "ranking" ? "#9AA3AD" :
             "#5C7A93";
 
         const divider =
@@ -1530,6 +1563,21 @@ async function requestRerank(profile){
     throw new Error(body.error || `Server returned ${res.status}`);
   }
   return res.json();
+}
+
+async function requestEvents() {
+  const res = await fetch(`${BACKEND_URL}/api/events`);
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.error ||
+      `Server returned ${res.status}`
+    );
+  }
+
+  return data;
 }
 
 async function requestSignup(email, password){
@@ -2509,7 +2557,7 @@ async function restoreLoginState(){
       updateAuthUI(data.user);
 
       STUDENT_PROFILE = {
-        year: data.user.year || "general",
+        year: data.user.year || "",
         major: data.user.major || "",
         interests: data.user.interests || []
       };
@@ -2535,29 +2583,101 @@ async function restoreLoginState(){
    automatically so the student gets their personalized map without
    touching "Edit profile" again. Silent no-op if the backend isn't
    running yet -- the static snapshot just stays as-is. */
-async function tryAutoPersonalize(){
+async function tryAutoPersonalize() {
   const stored = loadStoredProfile();
-  if (!stored) return;
+
+  const profile = stored || {
+    year: "",
+    major: "",
+    interests: []
+  };
+
+  const hasPersonalization =
+    Boolean(profile.year) ||
+    Boolean(profile.major) ||
+    (
+      Array.isArray(profile.interests) &&
+      profile.interests.length > 0
+    );
+
   showPersonalizingBanner();
+
   try {
-    const data = await requestRerank(stored);
-    EVENTS = data.events;
-    STUDENT_PROFILE = data.student_profile;
-    GENERATED_AT = data.generated_at;
-    STATIC_SNAPSHOT = false; // live data now -- always current, no more staleness filtering
-    renderData();
-    renderCategoryInfo(STUDENT_PROFILE);
-    renderYearInfo(STUDENT_PROFILE);
-    document.getElementById("inputYear").value = STUDENT_PROFILE.year;
-    document.getElementById("inputMajor").value = STUDENT_PROFILE.major;
+
+    // ---------------------------------------
+    // PROFILE EXISTS
+    // ---------------------------------------
+
+    if (hasPersonalization) {
+      const data = await requestRerank(profile);
+
+      EVENTS = data.events;
+      STUDENT_PROFILE = data.student_profile;
+      GENERATED_AT = data.generated_at;
+      STATIC_SNAPSHOT = false;
+
+      renderData();
+      renderCategoryInfo(STUDENT_PROFILE);
+      renderYearInfo(STUDENT_PROFILE);
+
+    }
+
+    // ---------------------------------------
+    // GENERAL BROWSING MODE
+    // ---------------------------------------
+
+    else {
+      // Start AI ranking immediately.
+      // Do not wait for /api/events first.
+      const rankingPromise =
+        requestRerank(profile);
+
+      // Meanwhile, load the full live event list.
+      const data = await requestEvents();
+
+      EVENTS = data.events;
+      GENERATED_AT = data.generated_at;
+      STATIC_SNAPSHOT = false;
+
+      STUDENT_PROFILE = {
+        year: "",
+        major: "",
+        interests: []
+      };
+
+      // Show all live events immediately.
+      renderData();
+      renderCategoryInfo(STUDENT_PROFILE);
+      renderYearInfo(STUDENT_PROFILE);
+
+      // Replace temporary general events with
+      // the AI-ranked HIGH / MEDIUM / LOW results.
+      const rankedData =
+        await rankingPromise;
+
+      EVENTS = rankedData.events;
+      STUDENT_PROFILE =
+        rankedData.student_profile;
+      GENERATED_AT =
+        rankedData.generated_at;
+
+      renderData();
+      renderCategoryInfo(STUDENT_PROFILE);
+      renderYearInfo(STUDENT_PROFILE);
+    }
+
+    document.getElementById("inputYear").value =
+      STUDENT_PROFILE.year || "";
+
+    document.getElementById("inputMajor").value =
+      STUDENT_PROFILE.major || "";
+
   } catch (err) {
-    console.warn("Auto-personalize skipped (backend not reachable yet):", err.message);
-    // Don't leave the banner stuck on "Personalizing..." forever -- fall
-    // back to whatever profile/events we actually have (the static
-    // snapshot). Re-run renderData() rather than just the banner, so a
-    // still-STATIC_SNAPSHOT page correctly falls back to the "expired
-    // snapshot" state instead of showing a banner that contradicts an
-    // agenda list left over from the very first renderData() call.
+    console.warn(
+      "Live events could not be loaded:",
+      err.message
+    );
+
     renderData();
   }
 }

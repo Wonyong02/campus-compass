@@ -197,6 +197,31 @@ def home():
         "campus_map_prototype.html"
     )
 
+@app.route("/api/events", methods=["GET"])
+def get_events():
+    raw_events = load_or_scrape_events()
+
+    events = []
+
+    for raw_event in raw_events:
+        event = dict(raw_event)
+
+        # General browsing mode:
+        # no personalized ranking yet.
+        if event.get("tier") not in ("high", "medium", "low"):
+            event["tier"] = "ranking"
+
+        if not event.get("reason"):
+            event["reason"] = "AI ranking in progress."
+
+        events.append(event)
+
+    return jsonify({
+        "status": "ok",
+        "generated_at": datetime.now().isoformat(),
+        "events": events,
+    })
+
 @app.route("/api/rerank", methods=["POST"])
 def rerank():
 
