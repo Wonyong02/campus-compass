@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS events (
     time TEXT,
     location TEXT,
     category TEXT,
+    source TEXT,
     description TEXT,
     url TEXT,
     latitude REAL,
@@ -74,7 +75,26 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TEXT NOT NULL
 );
 """
+def _ensure_column(
+    conn: sqlite3.Connection,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    """Add a column to an existing SQLite table if it does not exist."""
 
+    columns = {
+        row["name"]
+        for row in conn.execute(
+            f"PRAGMA table_info({table})"
+        ).fetchall()
+    }
+
+    if column not in columns:
+        conn.execute(
+            f"ALTER TABLE {table} "
+            f"ADD COLUMN {column} {definition}"
+        )
 
 def get_connection() -> sqlite3.Connection:
     """
@@ -88,6 +108,13 @@ def get_connection() -> sqlite3.Connection:
     conn.execute(EVENTS_SCHEMA)
     conn.execute(SUBSCRIBERS_SCHEMA)
     conn.execute(USERS_SCHEMA)
+
+    _ensure_column(
+        conn,
+        "events",
+        "source",
+        "TEXT",
+    )
 
     return conn
 
@@ -130,6 +157,7 @@ def save_events(events: list[dict], scraped_at: str) -> None:
                 time,
                 location,
                 category,
+                source,
                 description,
                 url,
                 latitude,
@@ -138,7 +166,7 @@ def save_events(events: list[dict], scraped_at: str) -> None:
                 match_type,
                 scraped_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -148,6 +176,7 @@ def save_events(events: list[dict], scraped_at: str) -> None:
                     ev.get("time"),
                     ev.get("location"),
                     ev.get("category"),
+                    ev.get("source", "deanza_events"),
                     ev.get("description"),
                     ev.get("url"),
                     ev.get("latitude"),
@@ -493,6 +522,38 @@ def get_user_by_email(email: str) -> dict | None:
         user["interests"] = []
 
     return user
+
+def update_user_password(
+    email: str,
+    password_hash: str,
+) -> bool:
+    """
+    Update a user's password hash.
+    Returns True if a user was updated.
+    """
+
+    email = email.strip().lower()
+
+    conn = get_connection()
+
+    with conn:
+        cursor = conn.execute(
+            """
+            UPDATE users
+            SET password_hash = ?
+            WHERE email = ?
+            """,
+            (
+                password_hash,
+                email,
+            ),
+        )
+
+    updated = cursor.rowcount > 0
+
+    conn.close()
+
+    return updated
 
 def update_user_profile(
     email: str,

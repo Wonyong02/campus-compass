@@ -19,16 +19,67 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_cors import CORS
 from pathlib import Path
 
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+
+import os
+import smtplib
+from dotenv import load_dotenv
+
+from email.message import EmailMessage
+
 import db as eventsdb
 from scrape_events import scrape_all_events
 from geocode_events import geocode_location
 from priority_agent import build_agent_input, prioritize_events, get_relevant_event_categories, get_year_guidance
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
+load_dotenv()
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+EMAIL_SENDER = os.getenv("CAMPUS_COMPASS_EMAIL")
+EMAIL_APP_PASSWORD = os.getenv("CAMPUS_COMPASS_EMAIL_PASSWORD")
+
+
+def send_email(
+    to_email: str,
+    subject: str,
+    body: str,
+) -> None:
+    if not EMAIL_SENDER or not EMAIL_APP_PASSWORD:
+        raise RuntimeError(
+            "Email credentials are not configured."
+        )
+
+    message = EmailMessage()
+    message["From"] = f"Campus Compass <{EMAIL_SENDER}>"
+    message["To"] = to_email
+    message["Subject"] = subject
+    message.set_content(body)
+
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465,
+    ) as smtp:
+        smtp.login(
+            EMAIL_SENDER,
+            EMAIL_APP_PASSWORD,
+        )
+
+        smtp.send_message(message)
 
 app = Flask(__name__)
 app.secret_key = "campus-compass-dev-secret"
 
 CORS(app)
+
+
+password_reset_serializer = URLSafeTimedSerializer(
+    app.secret_key
+)
+
+PASSWORD_RESET_SALT = "campus-compass-password-reset"
+PASSWORD_RESET_MAX_AGE = 60 * 60
 
 _events_cache = None
 
@@ -51,6 +102,23 @@ EMAIL_PATTERN = re.compile(
     r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 )
 
+def create_password_reset_token(email: str) -> str:
+    return password_reset_serializer.dumps(
+        email,
+        salt=PASSWORD_RESET_SALT,
+    )
+
+
+def read_password_reset_token(token: str) -> str | None:
+    try:
+        return password_reset_serializer.loads(
+            token,
+            salt=PASSWORD_RESET_SALT,
+            max_age=PASSWORD_RESET_MAX_AGE,
+        )
+
+    except (BadSignature, SignatureExpired):
+        return None
 
 # =========================================================
 # GENERAL EVENT HELPERS
@@ -143,15 +211,9 @@ def rerank():
 
     profile = request.get_json(force=True) or {}
 
-    if not profile.get("year") or not profile.get("major"):
-        return jsonify({
-            "error": "year and major are required"
-        }), 400
-
-    profile.setdefault(
-        "interests",
-        []
-    )
+    profile.setdefault("year", "")
+    profile.setdefault("major", "")
+    profile.setdefault("interests", [])
 
     if "email" in session:
         eventsdb.update_user_profile(
@@ -416,6 +478,122 @@ def login():
         },
     })
 
+@app.route("/api/config", methods=["GET"])
+def public_config():
+    return jsonify({
+        "google_client_id": GOOGLE_CLIENT_ID or ""
+    })
+
+@app.route("/api/google-login", methods=["POST"])
+def google_login():
+    data = request.get_json(silent=True) or {}
+
+    credential = str(
+        data.get("credential") or ""
+    ).strip()
+
+    if not credential:
+        return jsonify({
+            "error": "Google credential is required."
+        }), 400
+
+    if not GOOGLE_CLIENT_ID:
+        return jsonify({
+            "error": "Google login is not configured."
+        }), 500
+
+    try:
+        google_user = id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID,
+        )
+
+    except ValueError:
+        return jsonify({
+            "error": "Invalid Google sign-in."
+        }), 401
+
+    email = str(
+        google_user.get("email") or ""
+    ).strip().lower()
+
+    email_verified = google_user.get(
+        "email_verified",
+        False,
+    )
+
+    if not email or not email_verified:
+        return jsonify({
+            "error": "Google email could not be verified."
+        }), 401
+
+    # ---------------------------------
+    # Existing Campus Compass account?
+    # ---------------------------------
+
+    user = eventsdb.get_user_by_email(email)
+
+    is_new_user = False
+
+    # ---------------------------------
+    # First Google login -> create user
+    # ---------------------------------
+
+    if not user:
+        random_password = os.urandom(32).hex()
+
+        password_hash = generate_password_hash(
+            random_password
+        )
+
+        user = eventsdb.create_user(
+            email=email,
+            password_hash=password_hash,
+            year="",
+            major="",
+            interests=[],
+        )
+
+        is_new_user = True
+
+        # New Google users start with
+        # Daily Event Email enabled.
+        try:
+            eventsdb.save_subscriber(
+                email=email,
+                year="",
+                major="",
+                interests=[],
+            )
+
+        except Exception as e:
+            print(
+                f"[google-login] "
+                f"subscription error: {e}"
+            )
+
+    # ---------------------------------
+    # Log in using the same session
+    # format as normal email login
+    # ---------------------------------
+
+    session["user_id"] = user["user_id"]
+    session["email"] = user["email"]
+
+    return jsonify({
+        "status": "ok",
+        "message": "Signed in with Google.",
+        "is_new_user": is_new_user,
+        "user": {
+            "user_id": user["user_id"],
+            "email": user["email"],
+            "year": user.get("year", ""),
+            "major": user.get("major", ""),
+            "interests": user.get("interests", []),
+        },
+    })
+
 @app.route("/api/me", methods=["GET"])
 def me():
     if "user_id" not in session:
@@ -442,6 +620,113 @@ def me():
         }
     })
 
+@app.route("/api/forgot-password", methods=["POST"])
+def forgot_password():
+    data = request.get_json(silent=True) or {}
+
+    email = str(
+        data.get("email", "")
+    ).strip().lower()
+
+    if not email:
+        return jsonify({
+            "status": "error",
+            "message": "Enter your email address."
+        }), 400
+
+    user = eventsdb.get_user_by_email(email)
+
+    # Do not reveal whether an account exists.
+    if user:
+        token = create_password_reset_token(email)
+
+        reset_link = (
+            request.host_url.rstrip("/")
+            + "/?reset_token="
+            + token
+        )
+
+        subject = "Reset your Campus Compass password"
+
+        body = (
+            "Hi,\n\n"
+            "We received a request to reset your Campus Compass password.\n\n"
+            "Use the link below to create a new password:\n\n"
+            f"{reset_link}\n\n"
+            "This link will expire in 1 hour.\n\n"
+            "If you did not request a password reset, "
+            "you can ignore this email.\n\n"
+            "Campus Compass"
+        )
+
+        send_email(
+            email,
+            subject,
+            body,
+        )
+
+    return jsonify({
+        "status": "ok",
+        "message": (
+            "If an account exists for that email, "
+            "a password reset link will be sent."
+        )
+    })
+
+@app.route("/api/reset-password", methods=["POST"])
+def reset_password():
+    data = request.get_json(silent=True) or {}
+
+    token = str(
+        data.get("token", "")
+    ).strip()
+
+    new_password = str(
+        data.get("password", "")
+    )
+
+    if not token:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid password reset link."
+        }), 400
+
+    if len(new_password) < 8:
+        return jsonify({
+            "status": "error",
+            "message": "Password must be at least 8 characters."
+        }), 400
+
+    email = read_password_reset_token(token)
+
+    if not email:
+        return jsonify({
+            "status": "error",
+            "message": (
+                "This password reset link is invalid "
+                "or has expired."
+            )
+        }), 400
+
+    password_hash = generate_password_hash(
+        new_password
+    )
+
+    updated = eventsdb.update_user_password(
+        email,
+        password_hash,
+    )
+
+    if not updated:
+        return jsonify({
+            "status": "error",
+            "message": "Unable to reset password."
+        }), 400
+
+    return jsonify({
+        "status": "ok",
+        "message": "Password updated successfully."
+    })
 
 @app.route("/api/logout", methods=["POST"])
 def logout():
@@ -511,24 +796,6 @@ def subscribe():
             "error": "Please enter a valid email address."
         }), 400
 
-
-    # -------------------------
-    # Profile is required
-    # so emails can be personalized
-    # -------------------------
-
-    if not year:
-
-        return jsonify({
-            "error": "Year is required."
-        }), 400
-
-
-    if not major:
-
-        return jsonify({
-            "error": "Major is required."
-        }), 400
 
 
     if not isinstance(interests, list):

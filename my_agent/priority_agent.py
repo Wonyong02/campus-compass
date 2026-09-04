@@ -88,7 +88,7 @@ def get_major_family(major: str) -> str:
     """
 
     if not major:
-        return "Undeclared / General"
+        return ""
 
     if major == "Undeclared / Undecided":
         return "Undeclared / General"
@@ -176,6 +176,20 @@ Rank EVERY event for the student.
 IMPORTANT RULES:
 
 1. The exact major is a strong personalization signal, but it is NOT a filter.
+
+If major is empty, the student has not selected a major.
+Do NOT interpret an empty major as Undeclared, Other, or any specific field.
+Do not lower, exclude, or hide events because of major relevance.
+Instead, consider all events using their general usefulness, urgency,
+date, category, title, and description.
+
+If year is empty, the student has not selected a year.
+Do not infer a year or student stage.
+Apply no year-based boost or reduction.
+
+If major, year, and interests are all empty, treat this as general browsing mode.
+Do not invent student preferences. Rank all events based primarily on
+general student usefulness, urgency, and timing.
 
 2. Use major_family to understand related fields.
 

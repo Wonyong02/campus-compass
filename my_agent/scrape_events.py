@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from event_category_map import CATEGORY_SOURCES
-
+from extra_sources import scrape_extra_events
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (educational hackathon project; contact: you@example.com)",
@@ -462,6 +462,21 @@ def scrape_all_events(
         time.sleep(
             REQUEST_DELAY_SECONDS
         )
+
+
+    # --------------------------------------------------
+    # EXTRA EVENT SOURCES
+    # --------------------------------------------------
+
+    print("Fetching additional De Anza sources...")
+
+    extra_events = scrape_extra_events()
+
+    all_events.extend(extra_events)
+
+    print(
+        f"  -> added {len(extra_events)} extra-source events"
+    )
 
     # --------------------------------------------------
     # 4. REMOVE DUPLICATES

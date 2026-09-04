@@ -103,6 +103,7 @@
     color:#17212B;
   }
   .profile-panel{
+    position: relative;
     position:absolute;
     top:56px;
     right:20px;
@@ -113,6 +114,22 @@
     border-radius:12px;
     padding:14px 16px;
     box-shadow:0 12px 30px rgba(0,0,0,0.4);
+  }
+  .profile-close-btn {
+  position: absolute;
+    top: 2px;
+    right: 12px;
+    border: none;
+    background: transparent;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 4px 6px;
+    color: #666;
+  }
+
+  .profile-close-btn:hover {
+    color: #fff;
   }
   .profile-panel.hidden{display:none;}
   .profile-panel-row{margin-bottom:10px;}
@@ -137,6 +154,33 @@
     padding:7px 9px;
     font-family:'Inter',sans-serif;
     font-size:12.5px;
+  }
+  .major-input-wrap {
+    position: relative;
+  }
+
+  .major-input-wrap input {
+    padding-right: 60px;
+  }
+
+  .major-clear-btn {
+    position: absolute;
+    top: 50%;
+    right: 30px;
+    transform: translateY(-50%);
+
+    border: none;
+    background: transparent;
+    color: #8B93A0;
+
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+
+  .major-clear-btn:hover {
+    color: #fff;
   }
   .email-notification-box{
     margin-top:12px;
@@ -420,7 +464,289 @@
     .header-top{flex-direction:column;align-items:flex-start;}
     .profile-panel{right:12px;left:12px;width:auto;}
   }
+
+  /* =========================================================
+   AUTH
+   ========================================================= */
+
+  .auth-overlay{
+    position:fixed;
+    inset:0;
+    z-index:3000;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    padding:24px;
+
+    background:rgba(15,22,30,0.72);
+    backdrop-filter:blur(6px);
+  }
+
+  .auth-overlay.hidden{
+    display:none;
+  }
+
+  .auth-card{
+    position:relative;
+
+    width:100%;
+    max-width:420px;
+
+    background:#fff;
+    border:1px solid var(--hair);
+    border-radius:18px;
+
+    padding:36px 34px 30px;
+
+    box-shadow:
+      0 24px 70px rgba(0,0,0,0.28);
+  }
+
+  .auth-close{
+    position:absolute;
+    top:14px;
+    right:16px;
+
+    border:0;
+    background:transparent;
+
+    color:#8A847B;
+
+    font-size:26px;
+    line-height:1;
+
+    cursor:pointer;
+  }
+
+  .auth-close:hover{
+    color:var(--ink);
+  }
+
+  .auth-brand{
+    margin-bottom:22px;
+
+    font-family:'Space Grotesk',sans-serif;
+    font-size:16px;
+    font-weight:700;
+
+    color:var(--ink);
+  }
+
+  .auth-brand span{
+    color:var(--coral);
+  }
+
+  .auth-card h2{
+    margin:0 0 7px;
+
+    font-family:'Space Grotesk',sans-serif;
+    font-size:27px;
+
+    color:var(--ink);
+  }
+
+  .auth-subtitle{
+    margin:0 0 26px;
+
+    color:var(--text-dim);
+
+    font-size:13px;
+    line-height:1.5;
+  }
+
+  .auth-field{
+    margin-bottom:16px;
+  }
+
+  .auth-field.hidden{
+    display:none;
+  }
+
+  .auth-field label{
+    display:block;
+
+    margin-bottom:7px;
+
+    font-size:12px;
+    font-weight:600;
+
+    color:var(--text);
+  }
+
+  .auth-label-row{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+
+  .auth-field input{
+    width:100%;
+
+    padding:12px 13px;
+
+    background:#FAF9F6;
+
+    border:1px solid #D9D5CC;
+    border-radius:9px;
+
+    color:var(--text);
+
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+
+    outline:none;
+
+    transition:
+      border-color .15s ease,
+      box-shadow .15s ease;
+  }
+
+  .auth-field input:focus{
+    border-color:var(--slate);
+
+    box-shadow:
+      0 0 0 3px rgba(92,122,147,.12);
+  }
+
+  .auth-primary{
+    width:100%;
+
+    margin-top:4px;
+    padding:12px;
+
+    border:0;
+    border-radius:9px;
+
+    background:var(--ink);
+    color:white;
+
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    font-weight:600;
+
+    cursor:pointer;
+  }
+
+  .auth-primary:hover{
+    background:#243443;
+  }
+
+  .auth-primary:disabled{
+    opacity:.6;
+    cursor:default;
+  }
+
+  .auth-divider{
+    display:flex;
+    align-items:center;
+    gap:12px;
+
+    margin:22px 0;
+
+    color:#9A958C;
+
+    font-size:12px;
+  }
+
+  .auth-divider::before,
+  .auth-divider::after{
+    content:"";
+    height:1px;
+    flex:1;
+
+    background:#E4E0D8;
+  }
+
+  .auth-google{
+    width:100%;
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+
+    padding:11px;
+
+    background:white;
+
+    border:1px solid #D9D5CC;
+    border-radius:9px;
+
+    color:var(--text);
+
+    font-family:'Inter',sans-serif;
+    font-size:14px;
+    font-weight:600;
+
+    cursor:pointer;
+  }
+
+  .auth-google:hover{
+    background:#F8F7F4;
+  }
+
+  .google-g{
+    font-family:Arial,sans-serif;
+    font-size:17px;
+    font-weight:700;
+  }
+
+  .auth-switch{
+    margin:22px 0 0;
+
+    text-align:center;
+
+    color:var(--text-dim);
+
+    font-size:13px;
+  }
+
+  .auth-link{
+    padding:0;
+
+    border:0;
+    background:transparent;
+
+    color:var(--slate);
+
+    font-family:'Inter',sans-serif;
+    font-size:12px;
+    font-weight:600;
+
+    cursor:pointer;
+  }
+
+  .auth-link:hover{
+    text-decoration:underline;
+  }
+
+  .auth-switch .auth-link{
+    margin-left:4px;
+    font-size:13px;
+  }
+
+  .auth-status{
+    min-height:18px;
+
+    margin:-3px 0 9px;
+
+    color:var(--coral);
+
+    font-size:12px;
+  }
+
+  .auth-divider.hidden,
+  .auth-google.hidden {
+    display: none;
+  }
+
+  .auth-status.success {
+    color: #3f7a58;
+  }
 </style>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
 
@@ -432,11 +758,11 @@
 
       
       <button class="edit-btn" id="signupBtn" type="button">
-        Sign up
+        Create account
       </button>
 
       <button class="edit-btn" id="loginBtn" type="button">
-        Log in
+        Sign in
       </button>
 
       <span id="loggedInUser" style="display:none;"></span>
@@ -460,57 +786,158 @@
     <div class="ticker-track" id="tickerTrack"></div>
   </div>
   
-  <div class="profile-panel hidden" id="authPanel">
-    <div class="profile-panel-row">
-      <label>Email</label>
-      <input
-        type="email"
-        id="authEmail"
-        placeholder="your@email.com"
-        autocomplete="email"
+  <div class="auth-overlay hidden" id="authPanel">
+    <div class="auth-card">
+
+      <button
+        class="auth-close"
+        id="authCancelBtn"
+        type="button"
+        aria-label="Close"
       >
-    </div>
-
-    <div class="profile-panel-row">
-      <label>Password</label>
-      <input
-        type="password"
-        id="authPassword"
-        placeholder="At least 8 characters"
-        autocomplete="current-password"
-      >
-    </div>
-
-    <div class="profile-panel-actions">
-      <span id="authStatus"></span>
-
-      <button class="forget-btn" id="authCancelBtn" type="button">
-        Cancel
+        ×
       </button>
 
-      <button id="authSubmitBtn" type="button">
-        Continue
+      <div class="auth-brand">
+        Campus<span>·</span>Compass
+      </div>
+
+      <h2 id="authTitle">
+        Welcome back
+      </h2>
+
+      <p class="auth-subtitle" id="authSubtitle">
+        Sign in to continue to Campus Compass.
+      </p>
+
+      <div class="auth-field" id="emailField">
+        <label for="authEmail">
+          Email
+        </label>
+
+        <input
+          type="email"
+          id="authEmail"
+          placeholder="you@example.com"
+          autocomplete="email"
+        >
+      </div>
+
+      <div class="auth-field" id="passwordField">
+        <div class="auth-label-row">
+          <label for="authPassword" id="passwordLabel">
+            Password
+          </label>
+
+          <button
+            class="auth-link"
+            id="forgotPasswordBtn"
+            type="button"
+          >
+            Forgot password?
+          </button>
+        </div>
+
+        <input
+          type="password"
+          id="authPassword"
+          placeholder="Enter your password"
+          autocomplete="current-password"
+        >
+      </div>
+
+      <div
+        class="auth-field hidden"
+        id="confirmPasswordField"
+      >
+        <label for="authConfirmPassword">
+          Confirm password
+        </label>
+
+        <input
+          type="password"
+          id="authConfirmPassword"
+          placeholder="Enter your password again"
+          autocomplete="new-password"
+        >
+      </div>
+
+      <div
+        id="authStatus"
+        class="auth-status"
+      ></div>
+
+      <button
+        class="auth-primary"
+        id="authSubmitBtn"
+        type="button"
+      >
+        Sign in
       </button>
+
+      <div class="auth-divider" id="authDivider">
+        <span>or</span>
+      </div>
+
+      <div
+        class="auth-google"
+        id="googleAuthBtn"
+      ></div>
+
+      <p class="auth-switch" id="authSwitchArea">
+        <span id="authSwitchText">
+          New to Campus Compass?
+        </span>
+
+        <button
+          class="auth-link"
+          id="authSwitchBtn"
+          type="button"
+        >
+          Create account
+        </button>
+      </p>
+
     </div>
   </div>
 
   <div class="profile-panel hidden" id="profilePanel">
+    <button
+      class="profile-close-btn"
+      id="profileCloseBtn"
+      type="button"
+      aria-label="Close profile"
+    >
+      ×
+    </button>
     <div class="profile-panel-row">
       <label>Year</label>
       <select id="inputYear">
+        <option value="">All years</option>
         <option value="freshman">Freshman</option>
         <option value="general">General student</option>
       </select>
     </div>
     <div class="profile-panel-row">
       <label>Major / Intended Major</label>
-      <input
-        type="text"
-        id="inputMajor"
-        list="majorOptions"
-        placeholder="Search your major..."
-        autocomplete="off"
-      >
+      <div class="major-input-wrap">
+        <input
+          type="text"
+          id="inputMajor"
+          list="majorOptions"
+          placeholder="All majors (optional)"
+          autocomplete="off"
+        >
+
+        <button
+          class="major-clear-btn"
+          id="clearMajorBtn"
+          type="button"
+          aria-label="Clear major"
+        >
+          ×
+        </button>
+      </div>
 
       <datalist id="majorOptions">
         <option value="Accounting">
@@ -616,8 +1043,8 @@
       <div class="range-filter" id="rangeFilter">
         <button type="button" class="range-btn" data-range="1">Today</button>
         <button type="button" class="range-btn" data-range="7">1 week</button>
-        <button type="button" class="range-btn" data-range="14">2 weeks</button>
-        <button type="button" class="range-btn active" data-range="30">1 month</button>
+        <button type="button" class="range-btn active" data-range="14">2 weeks</button>
+        <button type="button" class="range-btn" data-range="30">1 month</button>
         <button type="button" class="range-btn" data-range="all">All</button>
       </div>
     </div>
@@ -653,7 +1080,7 @@
    progress notes for why (Login is intentionally lower priority
    than making the map fully usable without one).
 --------------------------------------------------------- */
-const BACKEND_URL = "http://localhost:5001";
+const BACKEND_URL = window.location.origin;
 const STORAGE_KEY = "campusCompassProfile";
 const EMAIL_STORAGE_KEY = "campusCompassEmail";
 // interests chip picker removed 2026-09-03 -- see the CSS comment above
@@ -663,7 +1090,7 @@ const EMAIL_STORAGE_KEY = "campusCompassEmail";
 
 let GENERATED_AT = "2026-08-23T18:53:16.523889";
 let STUDENT_PROFILE = {
-  year: "general",
+  year: "",
   major: "",
   interests: []
 };
@@ -681,7 +1108,7 @@ const CAMPUS_CENTER = [37.3192806, -122.0447919];
 // bound -- it's just "everything scrape_events.py collected" (currently
 // up to months_ahead=3 worth of events; see scrape_events.py).
 const RANGE_DAYS = { "1": 1, "7": 7, "14": 14, "30": 30, "all": Infinity };
-let SELECTED_RANGE = "30";
+let SELECTED_RANGE = "14";
 
 let EVENTS = [
   {"title":"University of California (UC) Application Workshop","date":"2026-08-25","time":"2:30 pm to 4:00 pm","location":"Online via Zoom","url":"https://www.deanza.edu/events/event.html?id=190376791","latitude":null,"longitude":null,"is_virtual":true,"match_type":"virtual","tier":"high","reason":"UC application workshop is in 2 days, relevant for sophomore transfer planning."},
@@ -1151,6 +1578,155 @@ async function requestLogin(email, password){
   return data;
 }
 
+async function requestForgotPassword(email){
+  const res = await fetch(`${BACKEND_URL}/api/forgot-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      email
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      `Server returned ${res.status}`
+    );
+  }
+
+  return data;
+}
+
+async function requestResetPassword(token, password){
+  const res = await fetch(`${BACKEND_URL}/api/reset-password`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      token,
+      password
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      `Server returned ${res.status}`
+    );
+  }
+
+  return data;
+}
+
+async function requestGoogleLogin(credential) {
+  const res = await fetch(`${BACKEND_URL}/api/google-login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      credential: credential
+    })
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(
+      data.message ||
+      data.error ||
+      `Server returned ${res.status}`
+    );
+  }
+
+  return data;
+}
+
+async function initGoogleAuth() {
+  const googleButton =
+    document.getElementById("googleAuthBtn");
+
+  if (!googleButton) return;
+
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/config`
+    );
+
+    const config = await res.json();
+
+    if (!config.google_client_id) {
+      throw new Error(
+        "Google Client ID is not configured."
+      );
+    }
+
+    google.accounts.id.initialize({
+      client_id: config.google_client_id,
+
+      callback: async (response) => {
+        const panel =
+          document.getElementById("authPanel");
+
+        const statusEl =
+          document.getElementById("authStatus");
+
+        try {
+          statusEl.textContent =
+            "Signing in with Google...";
+
+          const data =
+            await requestGoogleLogin(
+              response.credential
+            );
+
+          updateAuthUI(data.user);
+
+          statusEl.textContent =
+            "Signed in successfully!";
+
+          setTimeout(() => {
+            panel.classList.add("hidden");
+          }, 600);
+
+        } catch (err) {
+          statusEl.textContent =
+            err.message ||
+            "Google sign-in failed.";
+
+          console.error(err);
+        }
+      }
+    });
+
+    google.accounts.id.renderButton(
+      googleButton,
+      {
+        type: "standard",
+        theme: "outline",
+        size: "large",
+        text: "continue_with",
+        shape: "rectangular"
+      }
+    );
+
+  } catch (err) {
+    console.error(
+      "Google Sign-In initialization failed:",
+      err
+    );
+  }
+}
+
 async function requestMe(){
   const res = await fetch(`${BACKEND_URL}/api/me`, {
     method: "GET",
@@ -1192,7 +1768,7 @@ function updateAuthUI(user){
     signupBtn.style.display = "none";
     loginBtn.style.display = "none";
 
-    loggedInUser.style.display = "inline";
+    loggedInUser.style.display = "none";
     loggedInUser.textContent = user.email;
 
     logoutBtn.style.display = "inline-block";
@@ -1216,6 +1792,15 @@ function updateAuthUI(user){
     emailInput.readOnly = false;
   }
 }
+
+document.getElementById("logoutBtn").onclick = async () => {
+  try {
+    await requestLogout();
+    window.location.reload();
+  } catch (err) {
+    console.error(err);
+  }
+};
 
 async function requestSubscribe(email, profile){
   const res = await fetch(`${BACKEND_URL}/api/subscribe`, {
@@ -1342,6 +1927,14 @@ function initProfilePanel(){
     document.getElementById("profilePanel").classList.toggle("hidden");
   };
 
+  document.getElementById("profileCloseBtn").onclick = () => {
+    document.getElementById("profilePanel").classList.add("hidden");
+  };
+
+  document.getElementById("clearMajorBtn").onclick = () => {
+    document.getElementById("inputMajor").value = "";
+  };
+
   document.getElementById("applyProfileBtn").onclick = async () => {
     const year = document.getElementById("inputYear").value;
     const major = document.getElementById("inputMajor").value.trim();
@@ -1349,10 +1942,6 @@ function initProfilePanel(){
     const statusEl = document.getElementById("profileStatus");
     const btn = document.getElementById("applyProfileBtn");
 
-    if (!major) {
-      statusEl.textContent = "Major can't be empty.";
-      return;
-    }
 
     statusEl.textContent = "Asking the agent to re-rank...";
     btn.disabled = true;
@@ -1399,12 +1988,6 @@ function initProfilePanel(){
     if (!email) {
       statusEl.textContent =
         "Enter your email first.";
-      return;
-    }
-
-    if (!major) {
-      statusEl.textContent =
-        "Choose your major first.";
       return;
     }
 
@@ -1482,81 +2065,442 @@ function initProfilePanel(){
 }
 
 let authMode = "signup";
+let passwordResetToken = null;
 
 function initAuthPanel(){
-  const panel = document.getElementById("authPanel");
-  const emailInput = document.getElementById("authEmail");
-  const passwordInput = document.getElementById("authPassword");
-  const statusEl = document.getElementById("authStatus");
-  const submitBtn = document.getElementById("authSubmitBtn");
 
-  document.getElementById("signupBtn").onclick = () => {
-    authMode = "signup";
-    statusEl.textContent = "";
-    submitBtn.textContent = "Sign up";
-    panel.classList.remove("hidden");
-  };
+    const panel = document.getElementById("authPanel");
 
-  document.getElementById("loginBtn").onclick = () => {
-    authMode = "login";
-    statusEl.textContent = "";
-    submitBtn.textContent = "Log in";
-    panel.classList.remove("hidden");
-  };
+    const emailInput = document.getElementById("authEmail");
+    const emailField = document.getElementById("emailField");
+    const passwordInput = document.getElementById("authPassword");
+    const passwordLabel = document.getElementById("passwordLabel");
 
-  document.getElementById("authCancelBtn").onclick = () => {
-    panel.classList.add("hidden");
-  };
+    const passwordField =
+      document.getElementById("passwordField");
 
-  document.getElementById("logoutBtn").onclick = async () => {
-    try {
-      await requestLogout();
-      updateAuthUI(null);
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    const forgotPasswordBtn =
+      document.getElementById("forgotPasswordBtn");
 
-  submitBtn.onclick = async () => {
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
+    const authDivider =
+      document.getElementById("authDivider");
 
-    if (!email || !password) {
-      statusEl.textContent = "Enter email and password.";
-      return;
-    }
+    const authSwitchArea =
+      document.getElementById("authSwitchArea");
 
-    submitBtn.disabled = true;
+    const googleAuthBtn =
+      document.getElementById("googleAuthBtn");
 
-    try {
-      if (authMode === "signup") {
-        statusEl.textContent = "Creating account...";
+    const confirmPasswordField =
+      document.getElementById("confirmPasswordField");
 
-        await requestSignup(email, password);
+    const confirmPasswordInput =
+      document.getElementById("authConfirmPassword");
 
-        statusEl.textContent = "Account created successfully!";
-      } else {
-        statusEl.textContent = "Logging in...";
+    const statusEl = document.getElementById("authStatus");
+    const submitBtn = document.getElementById("authSubmitBtn");
 
-        const data = await requestLogin(email, password);
+    const titleEl = document.getElementById("authTitle");
+    const subtitleEl = document.getElementById("authSubtitle");
 
-        updateAuthUI(data.user);
+    const switchText =
+      document.getElementById("authSwitchText");
 
-        statusEl.textContent = "Logged in successfully!";
+    const switchBtn =
+      document.getElementById("authSwitchBtn");
+
+
+    function openAuth(mode){
+
+      authMode = mode;
+
+      statusEl.textContent = "";
+      statusEl.classList.remove("success");
+
+      emailField.classList.remove("hidden");
+      passwordLabel.textContent = "Password";
+      forgotPasswordBtn.style.display = "";
+
+      emailInput.value = "";
+      passwordInput.value = "";
+      confirmPasswordInput.value = "";
+      passwordField.classList.remove("hidden");
+      authDivider.classList.remove("hidden");
+      googleAuthBtn.classList.remove("hidden");
+      authSwitchArea.classList.remove("hidden");
+
+      if(mode === "signup"){
+
+        titleEl.textContent = "Create your account";
+
+        subtitleEl.textContent =
+          "Create an account to personalize Campus Compass.";
+
+        submitBtn.textContent = "Create account";
+
+        confirmPasswordField.classList.remove("hidden");
+
+        passwordInput.autocomplete = "new-password";
+
+        switchText.textContent =
+          "Already have an account?";
+
+        switchBtn.textContent = "Sign in";
+
+      }else{
+
+        titleEl.textContent = "Welcome back";
+
+        subtitleEl.textContent =
+          "Sign in to continue to Campus Compass.";
+
+        submitBtn.textContent = "Sign in";
+
+        confirmPasswordField.classList.add("hidden");
+
+        passwordInput.autocomplete = "current-password";
+
+        switchText.textContent =
+          "New to Campus Compass?";
+
+        switchBtn.textContent = "Create account";
       }
 
-      passwordInput.value = "";
-
-    } catch (err) {
-      statusEl.textContent = err.message;
-      console.error(err);
-
-    } finally {
-      submitBtn.disabled = false;
+      panel.classList.remove("hidden");
     }
-  };
-}
 
+    function openResetPassword(token){
+
+      authMode = "reset";
+      passwordResetToken = token;
+
+      statusEl.textContent = "";
+      statusEl.classList.remove("success");
+
+      emailField.classList.add("hidden");
+
+      passwordField.classList.remove("hidden");
+      confirmPasswordField.classList.remove("hidden");
+
+      passwordLabel.textContent = "New password";
+      forgotPasswordBtn.style.display = "none";
+
+      passwordInput.value = "";
+      confirmPasswordInput.value = "";
+
+      passwordInput.placeholder =
+        "Enter your new password";
+
+      passwordInput.autocomplete =
+        "new-password";
+
+      titleEl.textContent =
+        "Create a new password";
+
+      subtitleEl.textContent =
+        "Choose a new password for your Campus Compass account.";
+
+      submitBtn.textContent =
+        "Update password";
+
+      authDivider.classList.add("hidden");
+      googleAuthBtn.classList.add("hidden");
+      authSwitchArea.classList.add("hidden");
+
+      panel.classList.remove("hidden");
+    }
+
+    function openForgotPassword(){
+
+      authMode = "forgot";
+
+      statusEl.textContent = "";
+
+      passwordInput.value = "";
+      confirmPasswordInput.value = "";
+
+      titleEl.textContent = "Reset your password";
+
+      subtitleEl.textContent =
+        "Enter your email and we'll send you a reset link.";
+
+      passwordField.classList.add("hidden");
+      confirmPasswordField.classList.add("hidden");
+
+      authDivider.classList.add("hidden");
+      googleAuthBtn.classList.add("hidden");
+
+      submitBtn.textContent = "Send reset link";
+
+      switchText.textContent =
+        "Remember your password?";
+
+      switchBtn.textContent =
+        "Back to sign in";
+
+      panel.classList.remove("hidden");
+    }
+
+
+    document.getElementById("signupBtn").onclick = () => {
+      openAuth("signup");
+    };
+
+
+    document.getElementById("loginBtn").onclick = () => {
+      openAuth("login");
+    };
+
+    forgotPasswordBtn.onclick = () => {
+      openForgotPassword();
+    };
+
+
+    switchBtn.onclick = () => {
+
+      if(authMode === "forgot"){
+        openAuth("login");
+
+      }else if(authMode === "signup"){
+        openAuth("login");
+
+      }else{
+        openAuth("signup");
+      }
+
+    };
+
+
+    document.getElementById("authCancelBtn").onclick = () => {
+      panel.classList.add("hidden");
+    };
+
+  
+
+  submitBtn.onclick = async () => {
+
+      const email = emailInput.value.trim();
+      const password = passwordInput.value;
+      const confirmPassword = confirmPasswordInput.value;
+
+      statusEl.textContent = "";
+
+      if (authMode === "forgot") {
+
+        if (!email) {
+          statusEl.textContent =
+            "Enter your email address.";
+          return;
+        }
+
+        submitBtn.disabled = true;
+        statusEl.textContent =
+          "Sending reset link...";
+
+        try {
+
+          const data = await requestForgotPassword(email);
+
+          statusEl.textContent =
+            data.message ||
+            "Password reset link requested.";
+          
+          statusEl.classList.add("success");
+
+        } catch (err) {
+
+          statusEl.textContent =
+            err.message || "Something went wrong.";
+
+          console.error(err);
+
+        } finally {
+
+          submitBtn.disabled = false;
+        }
+
+        return;
+      }
+
+      if (authMode === "reset") {
+
+        if (!password) {
+          statusEl.textContent =
+            "Enter your new password.";
+          return;
+        }
+
+        if (!confirmPassword) {
+          statusEl.textContent =
+            "Confirm your new password.";
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          statusEl.textContent =
+            "Passwords do not match.";
+          return;
+        }
+
+        if (password.length < 8) {
+          statusEl.textContent =
+            "Password must be at least 8 characters.";
+          return;
+        }
+
+        submitBtn.disabled = true;
+        statusEl.textContent =
+          "Updating password...";
+
+        try {
+
+          const data = await requestResetPassword(
+            passwordResetToken,
+            password
+          );
+
+          statusEl.textContent =
+            data.message ||
+            "Password updated successfully.";
+
+          statusEl.classList.add("success");
+
+          passwordInput.value = "";
+          confirmPasswordInput.value = "";
+
+          // Remove reset token from the URL
+          window.history.replaceState(
+            {},
+            document.title,
+            window.location.pathname
+          );
+
+          setTimeout(() => {
+            openAuth("login");
+          }, 1000);
+
+        } catch (err) {
+
+          statusEl.classList.remove("success");
+
+          statusEl.textContent =
+            err.message || "Something went wrong.";
+
+          console.error(err);
+
+        } finally {
+
+          submitBtn.disabled = false;
+        }
+
+        return;
+      }
+
+      if (!email || !password) {
+        statusEl.textContent =
+          "Enter your email and password.";
+        return;
+      }
+
+      if (authMode === "signup") {
+
+        if (!confirmPassword) {
+          statusEl.textContent =
+            "Confirm your password.";
+          return;
+        }
+
+        if (password !== confirmPassword) {
+          statusEl.textContent =
+            "Passwords do not match.";
+          return;
+        }
+
+        if (password.length < 8) {
+          statusEl.textContent =
+            "Password must be at least 8 characters.";
+          return;
+        }
+      }
+
+      submitBtn.disabled = true;
+
+      try {
+
+        if (authMode === "signup") {
+
+          statusEl.textContent =
+            "Creating account...";
+
+          const data = await requestSignup(
+            email,
+            password
+          );
+
+          if (data.user) {
+            updateAuthUI(data.user);
+          }
+
+          statusEl.textContent =
+            "Account created successfully!";
+
+          passwordInput.value = "";
+          confirmPasswordInput.value = "";
+
+          setTimeout(() => {
+            panel.classList.add("hidden");
+          }, 600);
+
+        } else {
+
+          statusEl.textContent =
+            "Signing in...";
+
+          const data = await requestLogin(
+            email,
+            password
+          );
+
+          updateAuthUI(data.user);
+
+          statusEl.textContent =
+            "Signed in successfully!";
+
+          passwordInput.value = "";
+
+          setTimeout(() => {
+            panel.classList.add("hidden");
+          }, 600);
+        }
+
+      } catch (err) {
+
+        statusEl.textContent =
+          err.message || "Something went wrong.";
+
+        console.error(err);
+
+      } finally {
+
+        submitBtn.disabled = false;
+      }
+    };
+
+    const urlParams = new URLSearchParams(
+      window.location.search
+    );
+
+    const resetToken = urlParams.get(
+      "reset_token"
+    );
+
+    if (resetToken) {
+      openResetPassword(resetToken);
+    }
+
+  }
+
+  
 async function restoreLoginState(){
   try {
     const data = await requestMe();
@@ -1623,6 +2567,8 @@ initProfilePanel();
 initAuthPanel();
 initRangeFilter();
 renderData();
+
+window.addEventListener("load", initGoogleAuth);
 
 // Sequenced rather than fired in parallel: if the student is logged in,
 // restoreLoginState() saves their account profile to localStorage first,
