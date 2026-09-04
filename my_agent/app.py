@@ -36,7 +36,10 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 load_dotenv()
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_ID = os.getenv(
+    "GOOGLE_CLIENT_ID",
+    "212453297953-pg5c31tka8nboe3f9hgctlh33rfaeanq.apps.googleusercontent.com"
+)
 EMAIL_SENDER = os.getenv("CAMPUS_COMPASS_EMAIL")
 EMAIL_APP_PASSWORD = os.getenv("CAMPUS_COMPASS_EMAIL_PASSWORD")
 
