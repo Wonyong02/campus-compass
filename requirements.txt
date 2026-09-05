@@ -1,7 +1,20 @@
+# Agent
 strands-agents>=1.0.0
-strands-agents-tools>=0.8.0
+
+# Scraping
 requests>=2.31.0
 beautifulsoup4>=4.12.0
+
+# Web backend
 flask>=3.0.0
 flask-cors>=4.0.0
-google-auth
+
+# Ships with Flask, but imported directly by app.py, so declared here:
+#   werkzeug.security  -> password hashing
+#   itsdangerous       -> signed password reset tokens
+werkzeug>=3.0.0
+itsdangerous>=2.1.0
+
+# Auth and configuration
+google-auth>=2.28.0
+python-dotenv>=1.0.0

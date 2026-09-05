@@ -1,22 +1,19 @@
 """
-SQLite persistence for scraped + geocoded De Anza events
-and Campus Compass email subscribers.
+SQLite persistence for scraped + geocoded De Anza events,
+Campus Compass accounts, and email subscribers.
 
 Event tier/reason are NOT stored here because they are computed
-per student profile by priority_agent.py.
+per student profile by ranking.py.
 
-Campus Compass does not require login. Students can optionally
-subscribe with their email and profile information to receive
-personalized event notifications.
+An account is optional: a student can use the personalized map with no
+login at all, sign up with email and password, or sign in with Google.
 """
 
 import json
 import sqlite3
 from datetime import datetime, timezone
-from pathlib import Path
-
-
-DB_PATH = Path(__file__).parent / "events.db"
+from config import DB_PATH
+from event_identity import event_identity
 
 
 # ---------------------------------------------------------
@@ -125,22 +122,22 @@ def get_connection() -> sqlite3.Connection:
 
 def _event_id(ev: dict) -> str:
     """
-    De Anza event ids normally live in the detail URL (?id=12345).
+    Primary key for an event row.
 
-    Events without an id use title + date as a stable fallback key.
+    Delegates to event_identity.event_identity() so storage uses exactly
+    the same notion of "same event" that scraping de-duplicates on.
     """
 
-    url = ev.get("url") or ""
-
-    if "id=" in url:
-        return url.split("id=")[-1]
-
-    return f"{ev.get('title', '')}|{ev.get('date', '')}"
+    return event_identity(ev)
 
 
 def save_events(events: list[dict], scraped_at: str) -> None:
     """
     Replace the current event dataset with a fresh scrape.
+
+    INSERT OR REPLACE rather than INSERT: scraping already de-duplicates
+    via event_identity(), but a storage-layer crash is a bad way to find
+    out about a new duplicate-shaped source. Last write wins.
     """
 
     conn = get_connection()
@@ -150,7 +147,7 @@ def save_events(events: list[dict], scraped_at: str) -> None:
 
         conn.executemany(
             """
-            INSERT INTO events (
+            INSERT OR REPLACE INTO events (
                 event_id,
                 title,
                 date,

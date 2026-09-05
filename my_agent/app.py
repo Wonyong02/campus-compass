@@ -7,8 +7,12 @@ Main responsibilities:
 2. SQLite-backed De Anza event storage
 3. Email notification subscriptions
 
-No account/login is required. Students can use the personalized map
-without an account and optionally subscribe to daily event emails.
+An account is optional: students can use the personalized map with no
+login, sign up with email and password, or sign in with Google, and can
+subscribe to daily event emails either way.
+
+Ranking lives in ranking.py and configuration in config.py; this module
+is the HTTP layer over both.
 """
 
 import re
@@ -24,24 +28,21 @@ from google.auth.transport import requests as google_requests
 
 import os
 import smtplib
-from dotenv import load_dotenv
 
 from email.message import EmailMessage
 
+import config
 import db as eventsdb
-from scrape_events import scrape_all_events
 from geocode_events import geocode_location
-from priority_agent import build_agent_input, prioritize_events, get_relevant_event_categories, get_year_guidance
+from priority_agent import get_relevant_event_categories, get_year_guidance
+from profile_schema import MAJOR_OPTIONS, YEAR_OPTIONS
+from ranking import rank_events
+from scrape_events import scrape_all_events
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
-load_dotenv()
-
-GOOGLE_CLIENT_ID = os.getenv(
-    "GOOGLE_CLIENT_ID",
-    "212453297953-pg5c31tka8nboe3f9hgctlh33rfaeanq.apps.googleusercontent.com"
-)
-EMAIL_SENDER = os.getenv("CAMPUS_COMPASS_EMAIL")
-EMAIL_APP_PASSWORD = os.getenv("CAMPUS_COMPASS_EMAIL_PASSWORD")
+GOOGLE_CLIENT_ID = config.GOOGLE_CLIENT_ID
+EMAIL_SENDER = config.EMAIL_SENDER
+EMAIL_APP_PASSWORD = config.EMAIL_APP_PASSWORD
 
 
 def send_email(
@@ -61,8 +62,8 @@ def send_email(
     message.set_content(body)
 
     with smtplib.SMTP_SSL(
-        "smtp.gmail.com",
-        465,
+        config.SMTP_HOST,
+        config.SMTP_PORT,
     ) as smtp:
         smtp.login(
             EMAIL_SENDER,
@@ -72,7 +73,10 @@ def send_email(
         smtp.send_message(message)
 
 app = Flask(__name__)
-app.secret_key = "campus-compass-dev-secret"
+
+# Signs session cookies AND password reset tokens. See config.py -- it
+# has no hardcoded fallback on purpose.
+app.secret_key = config.get_secret_key()
 
 CORS(app)
 
@@ -81,24 +85,10 @@ password_reset_serializer = URLSafeTimedSerializer(
     app.secret_key
 )
 
-PASSWORD_RESET_SALT = "campus-compass-password-reset"
-PASSWORD_RESET_MAX_AGE = 60 * 60
+PASSWORD_RESET_SALT = config.PASSWORD_RESET_SALT
+PASSWORD_RESET_MAX_AGE = config.PASSWORD_RESET_MAX_AGE
 
 _events_cache = None
-
-
-GENERAL_IMPORTANT_KEYWORDS = [
-    "transfer",
-    "tag",
-    "uc application",
-    "csu application",
-    "registration",
-    "enrollment",
-    "financial aid",
-    "scholarship",
-    "graduation",
-    "academic deadline",
-]
 
 
 EMAIL_PATTERN = re.compile(
@@ -126,18 +116,6 @@ def read_password_reset_token(token: str) -> str | None:
 # =========================================================
 # GENERAL EVENT HELPERS
 # =========================================================
-
-def is_generally_important_event(event: dict) -> bool:
-    text = " ".join([
-        event.get("title") or "",
-        event.get("description") or "",
-    ]).lower()
-
-    return any(
-        keyword in text
-        for keyword in GENERAL_IMPORTANT_KEYWORDS
-    )
-
 
 def load_or_scrape_events(
     force_refresh: bool = False
@@ -167,7 +145,9 @@ def load_or_scrape_events(
         "(hits the live site, please be patient)..."
     )
 
-    raw_events = scrape_all_events(months_ahead=3)
+    raw_events = scrape_all_events(
+        months_ahead=config.SCRAPE_MONTHS_AHEAD
+    )
 
     for ev in raw_events:
         ev.update(
@@ -253,156 +233,13 @@ def rerank():
 
     raw_events = load_or_scrape_events()
 
-    agent_input, id_lookup = build_agent_input(
-        raw_events
-    )
-
     try:
-        ranked = prioritize_events(
-            profile,
-            agent_input,
-        )
+        final_events = rank_events(profile, raw_events)
 
     except Exception as e:
         return jsonify({
             "error": f"Agent re-ranking failed: {e}"
         }), 502
-
-
-    final_events = []
-
-    seen_ids = set()
-
-    skipped_ids = []
-
-
-    for item in ranked if isinstance(ranked, list) else []:
-
-        if (
-            not isinstance(item, dict)
-            or item.get("id") not in id_lookup
-        ):
-            skipped_ids.append(
-                item.get("id")
-                if isinstance(item, dict)
-                else item
-            )
-
-            continue
-
-
-        seen_ids.add(
-            item["id"]
-        )
-
-
-        ev = dict(
-            id_lookup[
-                item["id"]
-            ]
-        )
-
-
-        ev["tier"] = (
-            item.get("tier")
-            if item.get("tier")
-            in (
-                "high",
-                "medium",
-                "low",
-            )
-            else "low"
-        )
-
-
-        ev["reason"] = (
-            item.get("reason")
-            or "No reason given by the agent."
-        )
-
-
-        if (
-            ev["tier"] == "low"
-            and is_generally_important_event(ev)
-        ):
-
-            ev["tier"] = "medium"
-
-            ev["reason"] = (
-                "Broadly useful student information "
-                "regardless of major."
-            )
-
-
-        final_events.append(ev)
-
-
-    if skipped_ids:
-
-        print(
-            f"[rerank] agent returned "
-            f"{len(skipped_ids)} unrecognized id(s), "
-            f"skipped: {skipped_ids}"
-        )
-
-
-    dropped_ids = sorted(
-        set(id_lookup) - seen_ids
-    )
-
-
-    if dropped_ids:
-
-        print(
-            f"[rerank] agent didn't rank "
-            f"{len(dropped_ids)} event(s), "
-            f"added as low priority: "
-            f"{dropped_ids}"
-        )
-
-
-        for i in dropped_ids:
-
-            ev = dict(
-                id_lookup[i]
-            )
-
-
-            if is_generally_important_event(ev):
-
-                ev["tier"] = "medium"
-
-                ev["reason"] = (
-                    "Broadly useful student information "
-                    "regardless of major."
-                )
-
-            else:
-
-                ev["tier"] = "low"
-
-                ev["reason"] = (
-                    "Not ranked by the agent; "
-                    "shown as low priority by default."
-                )
-
-
-            final_events.append(ev)
-
-
-    tier_order = {
-        "high": 0,
-        "medium": 1,
-        "low": 2,
-    }
-
-
-    final_events.sort(
-        key=lambda ev: tier_order.get(
-            ev.get("tier"),
-            2,
-        )
-    )
 
     # Surface the same major -> category grounding the agent used, so the
     # frontend can show it as a read-only note instead of asking the
@@ -506,6 +343,26 @@ def login():
         },
     })
 
+@app.route("/api/profile-options", methods=["GET"])
+def profile_options():
+    """
+    The year and major values the profile form should offer.
+
+    Served from profile_schema.py so the form cannot drift from what the
+    backend actually grounds. Ten majors were previously selectable in
+    the HTML with no category mapping behind them, which made
+    personalization quietly do nothing for those students.
+    """
+
+    return jsonify({
+        "years": [
+            {"value": option["value"], "label": option["label"]}
+            for option in YEAR_OPTIONS
+        ],
+        "majors": MAJOR_OPTIONS,
+    })
+
+
 @app.route("/api/config", methods=["GET"])
 def public_config():
     return jsonify({
@@ -585,21 +442,33 @@ def google_login():
 
         is_new_user = True
 
-        # New Google users start with
-        # Daily Event Email enabled.
-        try:
-            eventsdb.save_subscriber(
-                email=email,
-                year="",
-                major="",
-                interests=[],
-            )
+        # New Google users start with Daily Event Email enabled -- but
+        # only if they have never subscribed before. `users` and
+        # `subscribers` are separate tables keyed loosely by email, so a
+        # student who subscribed by email without an account already has
+        # a row here. save_subscriber() overwrites year/major and forces
+        # notifications_enabled back to 1, which would wipe their saved
+        # major and silently re-enable email they had turned off.
+        #
+        # This guards the symptom. The underlying duplication of profile
+        # fields across both tables still needs a decision before the
+        # daily email job is built on top of it.
+        existing_subscriber = eventsdb.get_subscriber(email)
 
-        except Exception as e:
-            print(
-                f"[google-login] "
-                f"subscription error: {e}"
-            )
+        if existing_subscriber is None:
+            try:
+                eventsdb.save_subscriber(
+                    email=email,
+                    year="",
+                    major="",
+                    interests=[],
+                )
+
+            except Exception as e:
+                print(
+                    f"[google-login] "
+                    f"subscription error: {e}"
+                )
 
     # ---------------------------------
     # Log in using the same session
@@ -687,11 +556,21 @@ def forgot_password():
             "Campus Compass"
         )
 
-        send_email(
-            email,
-            subject,
-            body,
-        )
+        # Delivery failures are logged, never surfaced. Returning a 500
+        # only when the account exists would turn this endpoint into an
+        # account-enumeration oracle -- the exact thing the "do not
+        # reveal whether an account exists" branch above is for.
+        try:
+            send_email(
+                email,
+                subject,
+                body,
+            )
+
+        except Exception as e:
+            print(
+                f"[forgot-password] could not send reset email: {e}"
+            )
 
     return jsonify({
         "status": "ok",
@@ -987,6 +866,6 @@ def health():
 if __name__ == "__main__":
 
     app.run(
-        port=5001,
-        debug=True,
+        port=config.PORT,
+        debug=config.DEBUG,
     )

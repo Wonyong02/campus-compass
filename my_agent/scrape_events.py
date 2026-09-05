@@ -6,7 +6,9 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 
+from config import EVENTS_JSON, REQUEST_DELAY_SECONDS, SCRAPE_MONTHS_AHEAD
 from event_category_map import CATEGORY_SOURCES
+from event_identity import deduplicate
 from extra_sources import scrape_extra_events
 
 HEADERS = {
@@ -16,7 +18,6 @@ HEADERS = {
 }
 
 CURRENT_YEAR = datetime.now().year
-REQUEST_DELAY_SECONDS = 2  # be polite -- don't hammer the school's server
 
 
 def parse_date_heading(text: str) -> str | None:
@@ -374,7 +375,7 @@ def extract_event_id(
 
 
 def scrape_all_events(
-    months_ahead: int = 3,
+    months_ahead: int = SCRAPE_MONTHS_AHEAD,
 ) -> list[dict]:
     """
     Combines:
@@ -481,22 +482,13 @@ def scrape_all_events(
     # --------------------------------------------------
     # 4. REMOVE DUPLICATES
     # --------------------------------------------------
+    # Uses the shared definition in event_identity.py so scraping and
+    # db.py agree on what counts as the same event. The previous
+    # version only de-duplicated events whose URL carried a numeric id,
+    # which meant the extra sources (whose URL is a listing page) were
+    # never de-duplicated here and then collided on db.py's primary key.
 
-    seen_ids = set()
-    deduped = []
-
-    for ev in all_events:
-        event_id = extract_event_id(
-            ev.get("url")
-        )
-
-        if event_id and event_id in seen_ids:
-            continue
-
-        if event_id:
-            seen_ids.add(event_id)
-
-        deduped.append(ev)
+    deduped = deduplicate(all_events)
 
     # --------------------------------------------------
     # 5. DROP EVENTS THAT HAVE ALREADY HAPPENED
@@ -519,7 +511,7 @@ def scrape_all_events(
 
 if __name__ == "__main__":
     events = scrape_all_events(
-        months_ahead=3
+        months_ahead=SCRAPE_MONTHS_AHEAD
     )
 
     print(
@@ -535,7 +527,7 @@ if __name__ == "__main__":
     )
 
     with open(
-        "my_agent/deanza_events.json",
+        EVENTS_JSON,
         "w",
         encoding="utf-8",
     ) as f:
@@ -548,5 +540,5 @@ if __name__ == "__main__":
 
     print(
         f"\nSaved all {len(events)} events "
-        f"to my_agent/deanza_events.json"
+        f"to {EVENTS_JSON}"
     )

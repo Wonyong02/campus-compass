@@ -1,11 +1,24 @@
 import json
 
-EVENTS_FILE = "my_agent/deanza_events.json"
-OUTPUT_FILE = "my_agent/deanza_events_geocoded.json"
+from config import EVENTS_GEOCODED_JSON, EVENTS_JSON
+
+EVENTS_FILE = EVENTS_JSON
+OUTPUT_FILE = EVENTS_GEOCODED_JSON
 
 # Coordinates confirmed via Google Places (real, verified locations)
+CAMPUS_CENTER = (37.3192806, -122.0447919)
+
+# Campus-wide names, not buildings. Checked only after every specific
+# building key has failed: "de anza college" is a substring of most
+# on-campus location strings, so matching it first resolved
+# "De Anza College Planetarium" to the campus centre and labelled the
+# result "confirmed" -- a wrong coordinate presented as an exact one.
+CAMPUS_WIDE = [
+    "de anza college",
+    "de anza campus",
+]
+
 CONFIRMED = {
-    "de anza college": (37.3192806, -122.0447919),
     "registration": (37.321623, -122.0447979),
     "student services": (37.321623, -122.0447979),
     "transfer center": (37.321623, -122.0447979),  # located inside the RSS building
@@ -53,17 +66,41 @@ def geocode_location(location_text: str | None) -> dict:
     if any(keyword in text_lower for keyword in VIRTUAL_KEYWORDS):
         return {"latitude": None, "longitude": None, "is_virtual": True, "match_type": "virtual"}
 
-    for keyword, (lat, lng) in CONFIRMED.items():
-        if keyword in text_lower:
-            return {"latitude": lat, "longitude": lng, "is_virtual": False, "match_type": "confirmed"}
+    # Longest key first, across both tables. "de anza college" is a
+    # substring of most on-campus location strings, so checking all of
+    # CONFIRMED before APPROXIMATE resolved "De Anza College Planetarium"
+    # to the campus centre -- and labelled it "confirmed", so the UI
+    # showed a wrong coordinate without the "~" it uses for imprecise ones.
+    candidates = [
+        (keyword, coords, "confirmed")
+        for keyword, coords in CONFIRMED.items()
+    ] + [
+        (keyword, coords, "approximate")
+        for keyword, coords in APPROXIMATE.items()
+    ]
 
-    for keyword, (lat, lng) in APPROXIMATE.items():
+    for keyword, (lat, lng), match_type in sorted(
+        candidates,
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
         if keyword in text_lower:
-            return {"latitude": lat, "longitude": lng, "is_virtual": False, "match_type": "approximate"}
+            return {
+                "latitude": lat,
+                "longitude": lng,
+                "is_virtual": False,
+                "match_type": match_type,
+            }
 
-    # Fallback: drop the pin at the general campus center rather than
-    # discarding the event entirely
-    lat, lng = CONFIRMED["de anza college"]
+    lat, lng = CAMPUS_CENTER
+
+    # An explicit campus-wide name: the campus centre really is the right
+    # coordinate, so this one is "confirmed".
+    if any(keyword in text_lower for keyword in CAMPUS_WIDE):
+        return {"latitude": lat, "longitude": lng, "is_virtual": False, "match_type": "confirmed"}
+
+    # Anything unrecognised still gets a pin rather than being dropped,
+    # but is flagged so the UI can mark it imprecise.
     return {"latitude": lat, "longitude": lng, "is_virtual": False, "match_type": "fallback_campus_center"}
 
 
