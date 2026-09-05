@@ -179,6 +179,56 @@ MAJOR_EVENT_CATEGORIES = {
     "Journalism": [
         "Language Arts",
     ],
+
+    # These majors were selectable in the profile form for a while
+    # without any entry here, so choosing one silently produced no
+    # category grounding at all. profile_schema.check_profile_vocabulary()
+    # now reports that state instead of letting it go unnoticed.
+
+    "Communication Studies": [
+        "Language Arts",
+    ],
+
+    "Linguistics": [
+        "Language Arts",
+    ],
+
+    "Humanities": [
+        "Social Sciences and Humanities",
+        "Language Arts",
+    ],
+
+    "Cognitive Science": [
+        "Social Sciences and Humanities",
+        "Business, Computer Science and Applied Technologies",
+    ],
+
+    "Child Development": [
+        "Social Sciences and Humanities",
+    ],
+
+    "Geography": [
+        "Social Sciences and Humanities",
+        "Biological, Health and Environmental Sciences",
+    ],
+
+    "Geology": [
+        "Physical Sciences, Mathematics and Engineering",
+        "Biological, Health and Environmental Sciences",
+    ],
+
+    "Global Studies": [
+        "Intercultural/International Studies",
+        "Social Sciences and Humanities",
+    ],
+
+    "Paralegal Studies": [
+        "Business, Computer Science and Applied Technologies",
+    ],
+
+    # "Undeclared / Undecided" is deliberately absent: an undeclared
+    # student gets GENERAL_EVENT_CATEGORIES only, which is correct
+    # rather than a gap.
 }
 
 

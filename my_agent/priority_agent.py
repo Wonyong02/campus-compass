@@ -3,101 +3,26 @@ from datetime import datetime
 
 from strands import Agent
 
+from config import EVENTS_JSON
 from event_category_map import (
     MAJOR_EVENT_CATEGORIES,
     GENERAL_EVENT_CATEGORIES,
     ORIENTATION_KEYWORDS,
 )
 
-
-EVENTS_FILE = "my_agent/deanza_events.json"
-
-
-MAJOR_FAMILIES = {
-    "Technology / Engineering / STEM": [
-        "Computer Science",
-        "Data Science",
-        "Cybersecurity",
-        "Engineering",
-        "Mathematics",
-        "Physics",
-    ],
-
-    "Art / Design / Media": [
-        "Art",
-        "Art History",
-        "Studio Art",
-        "Graphic Design",
-        "Photography",
-        "Film / Television",
-        "Music",
-    ],
-
-    "Life Science / Health": [
-        "Biology",
-        "Chemistry",
-        "Health Sciences",
-        "Nursing",
-        "Public Health",
-        "Kinesiology",
-    ],
-
-    "Business / Economics": [
-        "Accounting",
-        "Business Administration",
-        "Economics",
-    ],
-
-    "Social / Behavioral Sciences": [
-        "Anthropology",
-        "Communication Studies",
-        "Political Science",
-        "Psychology",
-        "Sociology",
-        "Administration of Justice",
-    ],
-
-    "Humanities / Language": [
-        "English",
-        "History",
-        "Humanities",
-        "Linguistics",
-        "Philosophy",
-        "Journalism",
-    ],
-
-    "Environment / Earth Science": [
-        "Environmental Science",
-        "Geography",
-        "Geology",
-    ],
-
-    "Education / Human Services": [
-        "Child Development",
-    ],
-
-    "Law / Legal Studies": [
-        "Paralegal Studies",
-    ],
-}
+# The profile vocabulary (which years and majors exist, and what each
+# one means for ranking) lives in profile_schema.py so the form, the
+# prompt and this module cannot disagree. Re-exported here because
+# callers have imported these names from priority_agent since August.
+from profile_schema import (  # noqa: F401
+    MAJOR_FAMILIES,
+    describe_year_guidance,
+    get_major_family,
+    get_year_guidance,
+)
 
 
-def get_major_family(major: str) -> str:
-    """
-    Return the broader major family for a student's selected major.
-    """
-
-    if not major:
-        return ""
-
-    if major == "Undeclared / Undecided":
-        return "Undeclared / General"
-
-    for family, majors in MAJOR_FAMILIES.items():
-        if major in majors:
-            return family
-
-    return "Other / General"
+EVENTS_FILE = EVENTS_JSON
 
 
 def get_relevant_event_categories(major: str) -> list[str]:
@@ -132,29 +57,7 @@ def is_orientation_event(event: dict) -> bool:
     )
 
 
-def get_year_guidance(year: str) -> str:
-    """
-    De Anza is a community college, not a fixed 4-year track -- students
-    commonly take anywhere from about 1.5 to 3+ years to finish, so
-    "year" here is a rough self-reported stage, not a precise count.
-    The one clear signal it still gives us: a freshman hasn't likely
-    been through orientation yet, and a sophomore-or-later student
-    almost certainly has.
-
-    Returns "boost", "reduce", or "neutral" -- interpreted by
-    PRIORITY_SYSTEM_PROMPT alongside each event's is_orientation_event
-    flag.
-    """
-    if year == "freshman":
-        return "boost"
-
-    if year in ("sophomore", "junior", "senior"):
-        return "reduce"
-
-    return "neutral"
-
-
-PRIORITY_SYSTEM_PROMPT = """
+PRIORITY_SYSTEM_PROMPT_TEMPLATE = """
 You are a campus event prioritization assistant.
 
 You will be given:
@@ -245,15 +148,20 @@ De Anza is a community college, not a fixed 4-year track, so year is a
 rough self-reported stage rather than a precise count of time enrolled.
 Still:
 
-If year_guidance is "boost" (freshman), treat is_orientation_event
-events as a strong positive signal -- these are especially useful right
-now and should usually be HIGH.
+The year values the profile form offers, and the guidance each one
+produces, are listed below (generated from profile_schema.YEAR_OPTIONS):
 
-If year_guidance is "reduce" (sophomore, junior, or senior), treat
-is_orientation_event events as low relevance -- this student has almost
-certainly already been through orientation. These should rarely be HIGH
-unless something else about the event independently justifies it (e.g.
-it is also a hard academic deadline).
+{year_guidance_table}
+
+If year_guidance is "boost", treat is_orientation_event events as a
+strong positive signal -- these are especially useful right now and
+should usually be HIGH.
+
+If year_guidance is "reduce", treat is_orientation_event events as low
+relevance -- this student has almost certainly already been through
+orientation. These should rarely be HIGH unless something else about the
+event independently justifies it (e.g. it is also a hard academic
+deadline).
 
 If year_guidance is "neutral", judge is_orientation_event events like
 any other event, with no boost or reduction.
@@ -292,6 +200,14 @@ Each item must look exactly like:
 
 Rank ALL events from most to least important.
 """
+
+
+# str.replace(), not str.format(): the template contains a literal JSON
+# example with braces that format() would try to interpret.
+PRIORITY_SYSTEM_PROMPT = PRIORITY_SYSTEM_PROMPT_TEMPLATE.replace(
+    "{year_guidance_table}",
+    describe_year_guidance(),
+)
 
 
 def build_agent() -> Agent:
@@ -511,12 +427,9 @@ if __name__ == "__main__":
 
     # Test profile
     student_profile = {
-        "year": "sophomore",
+        "year": "freshman",
         "major": "Computer Science",
-        "interests": [
-            "career",
-            "academic",
-        ],
+        "interests": [],
     }
 
     events = load_events()

@@ -918,10 +918,13 @@
     </button>
     <div class="profile-panel-row">
       <label>Year</label>
+      <!-- Options are filled by loadProfileOptions() from
+           /api/profile-options so this form and profile_schema.py cannot
+           drift apart. The form once offered "general" while the backend
+           only recognised sophomore/junior/senior, so the option silently
+           had no effect on ranking. -->
       <select id="inputYear">
         <option value="">All years</option>
-        <option value="freshman">Freshman</option>
-        <option value="general">General student</option>
       </select>
     </div>
     <div class="profile-panel-row">
@@ -945,50 +948,11 @@
         </button>
       </div>
 
-      <datalist id="majorOptions">
-        <option value="Accounting">
-        <option value="Administration of Justice">
-        <option value="Anthropology">
-        <option value="Art">
-        <option value="Art History">
-        <option value="Biology">
-        <option value="Business Administration">
-        <option value="Chemistry">
-        <option value="Child Development">
-        <option value="Cognitive Science">
-        <option value="Communication Studies">
-        <option value="Computer Science">
-        <option value="Cybersecurity">
-        <option value="Data Science">
-        <option value="Economics">
-        <option value="Engineering">
-        <option value="English">
-        <option value="Environmental Science">
-        <option value="Film / Television">
-        <option value="Geography">
-        <option value="Geology">
-        <option value="Global Studies">
-        <option value="Graphic Design">
-        <option value="Health Sciences">
-        <option value="History">
-        <option value="Humanities">
-        <option value="Journalism">
-        <option value="Kinesiology">
-        <option value="Linguistics">
-        <option value="Mathematics">
-        <option value="Music">
-        <option value="Nursing">
-        <option value="Paralegal Studies">
-        <option value="Philosophy">
-        <option value="Photography">
-        <option value="Physics">
-        <option value="Political Science">
-        <option value="Psychology">
-        <option value="Public Health">
-        <option value="Sociology">
-        <option value="Studio Art">
-        <option value="Undeclared / Undecided">
-      </datalist>
+      <!-- Filled by loadProfileOptions(). Ten majors used to be listed
+           here with no entry in MAJOR_EVENT_CATEGORIES, so picking one
+           produced no category grounding and no "Personalization notes"
+           line, with nothing to indicate why. -->
+      <datalist id="majorOptions"></datalist>
     </div>
     <div class="profile-panel-row">
       <label>Personalization notes</label>
@@ -2690,13 +2654,60 @@ renderData();
 
 window.addEventListener("load", initGoogleAuth);
 
+// The year and major vocabularies are owned by profile_schema.py on the
+// backend. Fetching them keeps this form from offering a value the
+// ranking logic doesn't understand.
+async function loadProfileOptions(){
+  try {
+    const res = await fetch(`${BACKEND_URL}/api/profile-options`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+
+    const yearSelect = document.getElementById("inputYear");
+    if (yearSelect && Array.isArray(data.years)) {
+      const current = yearSelect.value;
+      yearSelect.textContent = "";
+
+      data.years.forEach(year => {
+        const option = document.createElement("option");
+        option.value = year.value;
+        option.textContent = year.label;
+        yearSelect.appendChild(option);
+      });
+
+      yearSelect.value = current;
+    }
+
+    const majorList = document.getElementById("majorOptions");
+    if (majorList && Array.isArray(data.majors)) {
+      majorList.textContent = "";
+
+      data.majors.forEach(major => {
+        const option = document.createElement("option");
+        option.value = major;
+        majorList.appendChild(option);
+      });
+    }
+  } catch (err) {
+    // A failed fetch leaves the form usable: the year select keeps its
+    // "All years" placeholder and the major input is free text anyway.
+    console.warn("Could not load profile options:", err);
+  }
+}
+
 // Sequenced rather than fired in parallel: if the student is logged in,
 // restoreLoginState() saves their account profile to localStorage first,
 // so tryAutoPersonalize() (which reads localStorage) picks up that exact
 // profile and does the live /api/rerank call on top of it. Running them
 // in parallel would race the two localStorage reads/writes the same way
 // the old profile-chip race condition did (see PROJECT_LOG.md Section 13).
+// loadProfileOptions() runs first so the year <select> already contains
+// the saved value's option by the time a restored profile tries to
+// select it -- assigning a value that has no matching option silently
+// leaves the select blank.
 (async () => {
+  await loadProfileOptions();
   await restoreLoginState();
   await tryAutoPersonalize();
 })();

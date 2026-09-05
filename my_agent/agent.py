@@ -15,7 +15,7 @@ from datetime import date
 from strands import Agent, tool
 
 import db as eventsdb
-from priority_agent import build_agent_input, prioritize_events
+from ranking import rank_events
 
 
 @tool
@@ -28,9 +28,10 @@ def get_personalized_events(
     Get personalized upcoming De Anza College events for a student.
 
     Args:
-        year: Student year, such as freshman or sophomore.
-        major: Student major or intended major.
-        interests: Student interests, such as transfer, career, or clubs.
+        year: Student stage -- "freshman", "general", or "" for no
+            preference. See profile_schema.YEAR_OPTIONS.
+        major: Student major or intended major, or "" if undeclared.
+        interests: Unused; kept for backwards compatibility.
 
     Returns:
         A JSON string containing personalized upcoming events.
@@ -68,69 +69,10 @@ def get_personalized_events(
         "interests": interests,
     }
 
-    agent_input, id_lookup = build_agent_input(upcoming_events)
-
-    ranked = prioritize_events(
-        profile,
-        agent_input,
-    )
-
-    personalized_events = []
-    seen_ids = set()
-
-    if isinstance(ranked, list):
-        for item in ranked:
-            if not isinstance(item, dict):
-                continue
-
-            event_id = item.get("id")
-
-            if event_id not in id_lookup:
-                continue
-
-            seen_ids.add(event_id)
-
-            event = dict(id_lookup[event_id])
-
-            event["tier"] = (
-                item.get("tier")
-                if item.get("tier") in ("high", "medium", "low")
-                else "low"
-            )
-
-            event["reason"] = (
-                item.get("reason")
-                or "No reason provided."
-            )
-
-            personalized_events.append(event)
-
-    # Keep events even if the ranking agent omitted them.
-    for event_id, event_data in id_lookup.items():
-        if event_id in seen_ids:
-            continue
-
-        event = dict(event_data)
-        event["tier"] = "low"
-        event["reason"] = (
-            "Not ranked by the agent; "
-            "shown as low priority by default."
-        )
-
-        personalized_events.append(event)
-
-    tier_order = {
-        "high": 0,
-        "medium": 1,
-        "low": 2,
-    }
-
-    personalized_events.sort(
-        key=lambda event: (
-            tier_order.get(event.get("tier"), 2),
-            event.get("date") or "9999-12-31",
-        )
-    )
+    # Same ranking path the website uses. These two entry points used to
+    # carry separate copies of this logic and had drifted apart, so the
+    # same event could come back MEDIUM on the map and LOW here.
+    personalized_events = rank_events(profile, upcoming_events)
 
     return json.dumps(
         {
@@ -152,8 +94,7 @@ agent = Agent(
 if __name__ == "__main__":
     message = """
     Find the most important upcoming De Anza College events
-    for a sophomore Computer Science student interested in
-    transfer opportunities and career development.
+    for a first-year Computer Science student.
 
     Use the Campus Compass event tool and give me a concise summary
     of the most relevant events.
