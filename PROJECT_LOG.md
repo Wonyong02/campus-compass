@@ -754,3 +754,190 @@ profile chips (see Section 13).
 - Opened as a PR against `main` rather than pushed directly, since
   `Bashipark1` is still an active contributor and hadn't seen any of
   this work before it landed.
+## 20. Structural Cleanup and Teammate Merge (2026-09-04 / 05)
+
+### 20.1 Context: two lines of work landing together
+
+PR #4 (`personalization-updates`, Section 19) was merged. `Bashipark1`
+then pushed `fac9c52` and `d07a43d` directly to `main` on top of it,
+adding Google Sign-In, password reset, three extra event sources
+(`extra_sources.py`: MSTRC, Academic Skills, Career Center), an
+`events.source` column with migration, and — significantly for ranking —
+making `major` and `year` optional, with a "general browsing mode" when
+both are blank.
+
+Reviewing the combined result surfaced a set of bugs that turned out not
+to be independent mistakes. Each was a symptom of the same fact being
+written down in more than one place, where the copies had drifted apart.
+
+### 20.2 Root cause: four duplicated definitions
+
+| Fact | Where it lived | What broke |
+|---|---|---|
+| What makes two events "the same" | `extract_event_id()`, `db._event_id()`, `build_agent_input()` | `save_events()` raised `IntegrityError` |
+| How ranked output is post-processed | `app.py`, `agent.py`, `pipeline.py` | Same event ranked differently per entry point |
+| Which `year`/`major` values are valid | 5 places / 3 places | `"general"` did nothing; 10 majors had no grounding |
+| Which events matter regardless of major | prompt rule 5 *and* a keyword list | Keyword list overwrote the agent's reasoning |
+
+**Event identity.** The extra sources were the first events whose URL is
+a listing page rather than a per-event link, so they carry no numeric id.
+Scraping only de-duplicated events that had one, and storage then
+collapsed the rest onto a `title|date` primary key:
+
+```
+event_id 1: Drop-in Math Tutoring|2026-09-10
+event_id 2: Drop-in Math Tutoring|2026-09-10
+CRASH -> IntegrityError: UNIQUE constraint failed: events.event_id
+```
+
+`/api/refresh` returned 500 and the whole scrape rolled back.
+
+**Profile vocabulary.** Section 19.5 reduced `year` to
+freshman/general, but `get_year_guidance()` still tested for
+`sophomore`/`junior`/`senior`. The form sent `"general"`, which matched
+nothing and fell through to `"neutral"`, so the year-based orientation
+weighting only ever applied to freshmen. The `reduce` branch in
+`renderYearInfo()` was unreachable. Separately, 10 of the 42 majors the
+form offered had no entry in `MAJOR_EVENT_CATEGORIES`, so selecting one
+produced no grounding and no "Personalization notes" line, with nothing
+to indicate why.
+
+**The keyword override.** `app.py` ran a substring keyword list over the
+ranked output, promoted matches from LOW to MEDIUM, and replaced the
+agent's written reason with a fixed sentence. This contradicted Section
+6's core design decision — the agent reads raw event text and judges it,
+rather than a fixed rule table assigning points — and duplicated
+`PRIORITY_SYSTEM_PROMPT` rule 5, which already covers the same ground.
+It was also matching the wrong things: the `tag` entry, meant for UC
+Transfer Admission Guarantee, matched `Heritage Month`, `Main Stage`,
+`Vintage` and `Advantage` as substrings.
+
+### 20.3 New modules
+
+- **`config.py`** — secrets, paths and runtime flags. `get_secret_key()`
+  has no hardcoded fallback and raises outside development. `_env()`
+  treats an empty value as unset (see 20.6). Paths resolve against the
+  module directory, so scripts work from any working directory.
+- **`profile_schema.py`** — `YEAR_OPTIONS`, `LEGACY_YEAR_ALIASES`
+  (sophomore/junior/senior still resolve for saved profiles),
+  `get_year_guidance()`, `get_major_family()`, `MAJOR_OPTIONS`, and
+  `check_profile_vocabulary()`, which reports majors that are offered
+  but only partly wired up.
+- **`event_identity.py`** — a De Anza numeric id when present, otherwise
+  `source | title | date | time | location`. Two sessions of the same
+  recurring workshop stay distinct; exact repeats collapse.
+- **`ranking.py`** — `rank_events()`, shared by `app.py`, `agent.py` and
+  `pipeline.py`. Returns copies rather than mutating the caller's
+  dictionaries, and backfills events the agent omitted.
+
+`PRIORITY_SYSTEM_PROMPT`'s year rules are now generated from
+`YEAR_OPTIONS`, so the prompt cannot describe years the form no longer
+offers. The frontend fetches its dropdown contents from a new
+`GET /api/profile-options`.
+
+### 20.4 Security and correctness fixes
+
+- **`app.secret_key` was hardcoded** as `"campus-compass-dev-secret"` and
+  published. It signs session cookies *and* password reset tokens, so the
+  committed value allowed forging a reset link for any account. Now read
+  from the environment with no fallback. See `.env.example`.
+- **`/api/forgot-password` leaked account existence.** `send_email()` was
+  called without a `try`, so an SMTP failure produced a 500 only when the
+  account existed — defeating the "do not reveal whether an account
+  exists" branch directly above it.
+- **Google Sign-In could wipe an existing subscription.** A student who
+  had subscribed by email without an account already has a `subscribers`
+  row; `save_subscriber()` overwrote their major with `""` and forced
+  `notifications_enabled` back to 1. Guarded by checking for an existing
+  subscriber first. The underlying duplication remains — see 20.7.
+- **Geocoding resolved specific buildings to the campus centre.**
+  `"de anza college"` is a substring of most on-campus location strings
+  and was checked before every building key, so
+  `"De Anza College Planetarium"` returned the campus centre labelled
+  `confirmed` — a wrong coordinate presented as an exact one. Campus-wide
+  names are now a separate tier checked last.
+- `debug=True` is off by default (`CAMPUS_COMPASS_DEBUG`).
+- **`requirements.txt` was missing `python-dotenv`**, which `config.py`
+  (and previously `app.py`) imports, so a clean clone could not start the
+  server at all. `itsdangerous` and `werkzeug` are now declared since
+  they are imported directly. `strands-agents-tools` was removed — no
+  module has imported it since Section 18.6 replaced the demo tools.
+
+### 20.5 Verification
+
+Pure functions were tested directly: year guidance including legacy
+values, vocabulary drift, event identity and de-duplication, geocoding
+resolution, and `rank_events()` (backfill, no mutation).
+
+End-to-end against live Bedrock, same profile with only `year` changed:
+
+```
+Welcome Day                          freshman=high   general=low
+UC Merced Rep Visit (1-1 drop-in)    freshman=high   general=medium
+UC Santa Barbra Rep Visit            freshman=high   general=medium
+UC Santa Cruz Rep Visit              freshman=high   general=medium
+```
+
+Before this change that list was empty. The three UC Rep Visits are not
+keyword matches — the agent reached them from `year_guidance` as
+context, which is the behaviour Section 6 was arguing for.
+
+### 20.6 Regression: empty environment values
+
+After merge, the Google Sign-In button stopped rendering. Copying
+`.env.example` to `.env` leaves every optional key present with an empty
+value, and `os.getenv(name, default)` reports such a key as set, so the
+default never applied and `GOOGLE_CLIENT_ID` resolved to `""`.
+
+`config._env()` now treats an empty value as unset, and `.env.example`
+ships its optional keys commented out. Branch `fix-empty-env-defaults`,
+commit `f12958e`.
+
+### 20.7 Known limitation, deferred deliberately
+
+`year`, `major` and `interests` are stored in **both** `users` and
+`subscribers`, with no foreign key between them. The Google Sign-In bug
+above is one symptom; the guard added in 20.4 treats the symptom only.
+
+This is worth settling before daily email lands, because that job will
+read `subscribers.year` / `subscribers.major` to build personalized mail.
+Editing a profile while logged in updates `users` and leaves the
+`subscribers` copy untouched, so a student who changes their major would
+keep receiving mail ranked for the old one.
+
+### 20.8 Email delivery: what is still missing
+
+Present: `send_email()` (working, used by password reset), the
+`subscribers` table, subscribe/unsubscribe endpoints,
+`load_active_subscribers()`, and `rank_events()`. The parts exist; they
+are not assembled.
+
+Missing:
+- A message builder (subscriber profile -> ranked events -> email text)
+- A job that iterates subscribers and sends
+- **Scheduling.** There is no cron and no scheduler; nothing runs unless
+  an HTTP request arrives
+- An always-on host — the app currently runs on a laptop
+- `subscribers.last_sent_at`, so a rerun does not send twice
+- Per-subscriber Bedrock cost and latency (~6s each) needs profile-level
+  caching
+- `/api/unsubscribe` takes an email with no authentication, so anyone can
+  unsubscribe anyone. A one-click unsubscribe link in the email should
+  carry a signed token, the same way password reset does
+
+### 20.9 GitHub
+
+- PR #5 `Fix structural drift behind five recurring bugs`
+  (`structural-cleanup`), merged
+- Branch `fix-empty-env-defaults`, commit `f12958e`, pushed
+- Files touched: `my_agent/config.py`, `profile_schema.py`,
+  `event_identity.py`, `ranking.py`, `.env.example`, `app.py`, `db.py`,
+  `priority_agent.py`, `event_category_map.py`, `scrape_events.py`,
+  `geocode_events.py`, `agent.py`, `pipeline.py`,
+  `campus_map_prototype.html`, and `requirements.txt`.
+  `extra_sources.py` was not modified.
+
+**Note for contributors:** after pulling, run
+`pip install -r requirements.txt` again and create `my_agent/.env` from
+`my_agent/.env.example`, setting `FLASK_SECRET_KEY`. Leave the optional
+keys commented out. Without this the server will not start.
