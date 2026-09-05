@@ -21,6 +21,22 @@ from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).parent
 
+
+def _env(name: str, default: str | None = None) -> str | None:
+    """
+    Read an environment variable, treating an empty value as unset.
+
+    .env files are normally created by copying .env.example, which lists
+    every key with a blank value. os.getenv() reports those keys as set
+    (to ""), so a plain os.getenv(name, default) would return "" and the
+    default would never apply -- which silently disabled Google Sign-In
+    the first time a .env existed.
+    """
+
+    value = os.getenv(name)
+
+    return value if value else default
+
 # Anchored to this file rather than the working directory. The server is
 # normally started from the home directory (`python -u my_agent/app.py`),
 # so a bare load_dotenv() would look for ~/.env and quietly miss the
@@ -39,9 +55,9 @@ load_dotenv()
 # Werkzeug's debugger allows arbitrary code execution through the
 # browser, so it must never be on for a deployment that is reachable by
 # anyone else. Opt in explicitly via the environment instead.
-DEBUG = os.getenv("CAMPUS_COMPASS_DEBUG", "").lower() in ("1", "true", "yes")
+DEBUG = (_env("CAMPUS_COMPASS_DEBUG") or "").lower() in ("1", "true", "yes")
 
-PORT = int(os.getenv("CAMPUS_COMPASS_PORT", "5001"))
+PORT = int(_env("CAMPUS_COMPASS_PORT", "5001"))
 
 
 # ---------------------------------------------------------
@@ -61,7 +77,7 @@ def get_secret_key() -> str:
     reminder to set the variable properly).
     """
 
-    key = os.getenv("FLASK_SECRET_KEY")
+    key = _env("FLASK_SECRET_KEY")
 
     if key:
         return key
@@ -89,16 +105,16 @@ def get_secret_key() -> str:
 # so keeping a shared default here is safe and lets teammates test Google
 # Sign-In without their own .env. The client *secret* is never used by
 # this flow and must not be added here.
-GOOGLE_CLIENT_ID = os.getenv(
+GOOGLE_CLIENT_ID = _env(
     "GOOGLE_CLIENT_ID",
     "212453297953-pg5c31tka8nboe3f9hgctlh33rfaeanq.apps.googleusercontent.com",
 )
 
-EMAIL_SENDER = os.getenv("CAMPUS_COMPASS_EMAIL")
-EMAIL_APP_PASSWORD = os.getenv("CAMPUS_COMPASS_EMAIL_PASSWORD")
+EMAIL_SENDER = _env("CAMPUS_COMPASS_EMAIL")
+EMAIL_APP_PASSWORD = _env("CAMPUS_COMPASS_EMAIL_PASSWORD")
 
-SMTP_HOST = os.getenv("CAMPUS_COMPASS_SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("CAMPUS_COMPASS_SMTP_PORT", "465"))
+SMTP_HOST = _env("CAMPUS_COMPASS_SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(_env("CAMPUS_COMPASS_SMTP_PORT", "465"))
 
 
 # ---------------------------------------------------------
@@ -126,5 +142,5 @@ PIPELINE_OUTPUT_JSON = BASE_DIR / "campus_events_final.json"
 # Scraping
 # ---------------------------------------------------------
 
-SCRAPE_MONTHS_AHEAD = int(os.getenv("CAMPUS_COMPASS_MONTHS_AHEAD", "3"))
+SCRAPE_MONTHS_AHEAD = int(_env("CAMPUS_COMPASS_MONTHS_AHEAD", "3"))
 REQUEST_DELAY_SECONDS = 2
