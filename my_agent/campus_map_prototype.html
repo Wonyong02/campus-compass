@@ -1703,6 +1703,11 @@ async function initGoogleAuth() {
 
           updateAuthUI(data.user);
 
+          updateSubscriptionUI(
+            data.subscription_enabled,
+            data.user.email
+          );
+
           statusEl.textContent =
             "Signed in successfully!";
 
@@ -1789,7 +1794,7 @@ function updateAuthUI(user){
     emailInput.value = user.email;
     emailInput.readOnly = true;
 
-    saveStoredEmail(user.email);
+    
 
   } else {
     signupBtn.style.display = "inline-block";
@@ -1802,6 +1807,67 @@ function updateAuthUI(user){
 
     // Logged-out users can type an email manually
     emailInput.readOnly = false;
+  }
+}
+
+function updateAuthUI(user){
+  const signupBtn = document.getElementById("signupBtn");
+  const loginBtn = document.getElementById("loginBtn");
+  const logoutBtn = document.getElementById("logoutBtn");
+  const loggedInUser = document.getElementById("loggedInUser");
+  const emailInput = document.getElementById("inputEmail");
+
+  if (user) {
+    signupBtn.style.display = "none";
+    loginBtn.style.display = "none";
+
+    loggedInUser.style.display = "none";
+    loggedInUser.textContent = user.email;
+
+    logoutBtn.style.display = "inline-block";
+
+    emailInput.value = user.email;
+    emailInput.readOnly = true;
+
+  } else {
+    signupBtn.style.display = "inline-block";
+    loginBtn.style.display = "inline-block";
+
+    loggedInUser.style.display = "none";
+    loggedInUser.textContent = "";
+
+    logoutBtn.style.display = "none";
+
+    emailInput.readOnly = false;
+  }
+}
+
+function updateSubscriptionUI(enabled, email) {
+  const subscribeBtn =
+    document.getElementById("subscribeEmailBtn");
+
+  const emailStatus =
+    document.getElementById("emailStatus");
+
+  if (enabled) {
+    subscribeBtn.classList.add("active");
+    subscribeBtn.textContent = "Subscribed ✓";
+
+    if (email) {
+      saveStoredEmail(email);
+    }
+
+    emailStatus.textContent =
+      "You'll receive personalized daily event emails.";
+
+  } else {
+    subscribeBtn.classList.remove("active");
+    subscribeBtn.textContent = "Get daily events";
+
+    clearStoredEmail();
+
+    emailStatus.textContent =
+      "Daily email notifications are off.";
   }
 }
 
@@ -2451,6 +2517,11 @@ function initAuthPanel(){
 
           if (data.user) {
             updateAuthUI(data.user);
+
+            updateSubscriptionUI(
+              data.subscription_enabled,
+              data.user.email
+            );
           }
 
           statusEl.textContent =
@@ -2473,7 +2544,16 @@ function initAuthPanel(){
             password
           );
 
+
+
           updateAuthUI(data.user);
+
+          const me = await requestMe();
+
+          updateSubscriptionUI(
+            me.subscription_enabled,
+            me.user.email
+          );
 
           statusEl.textContent =
             "Signed in successfully!";
@@ -2519,6 +2599,11 @@ async function restoreLoginState(){
 
     if (data.logged_in) {
       updateAuthUI(data.user);
+
+      updateSubscriptionUI(
+        data.subscription_enabled,
+        data.user.email
+      );
 
       STUDENT_PROFILE = {
         year: data.user.year || "",

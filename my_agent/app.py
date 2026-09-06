@@ -33,6 +33,10 @@ from email.message import EmailMessage
 
 import config
 import db as eventsdb
+from email_service import (
+    send_email as send_brevo_email,
+    sync_brevo_contact,
+)
 from geocode_events import geocode_location
 from priority_agent import get_relevant_event_categories, get_year_guidance
 from profile_schema import MAJOR_OPTIONS, YEAR_OPTIONS
@@ -298,9 +302,38 @@ def signup():
         interests=interests,
     )
 
+    # New users start with Daily Event Email enabled
+    existing_subscriber = eventsdb.get_subscriber(email)
+
+    if existing_subscriber is None:
+        eventsdb.save_subscriber(
+            email=email,
+            year=year,
+            major=major,
+            interests=interests,
+        )
+        try:
+            sync_brevo_contact(email)
+
+        except Exception as e:
+            print(
+                f"[signup] Brevo contact sync error: {e}"
+            )
+
+    session["user_id"] = user["user_id"]
+    session["email"] = user["email"]
+
+    subscriber = eventsdb.get_subscriber(email)
+
+    subscription_enabled = bool(
+        subscriber
+        and subscriber.get("notifications_enabled")
+    )
+
     return jsonify({
         "status": "ok",
         "message": "Account created successfully.",
+        "subscription_enabled": subscription_enabled,
         "user": user,
     })
 
@@ -330,10 +363,17 @@ def login():
 
     session["user_id"] = user["user_id"]
     session["email"] = user["email"]
+    subscriber = eventsdb.get_subscriber(email)
+
+    subscription_enabled = bool(
+        subscriber
+        and subscriber.get("notifications_enabled")
+    )
 
     return jsonify({
         "status": "ok",
         "message": "Logged in successfully.",
+        "subscription_enabled": subscription_enabled,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
@@ -463,6 +503,8 @@ def google_login():
                     major="",
                     interests=[],
                 )
+                
+                sync_brevo_contact(email)
 
             except Exception as e:
                 print(
@@ -478,10 +520,18 @@ def google_login():
     session["user_id"] = user["user_id"]
     session["email"] = user["email"]
 
+    subscriber = eventsdb.get_subscriber(email)
+
+    subscription_enabled = bool(
+        subscriber
+        and subscriber.get("notifications_enabled")
+    )
+
     return jsonify({
         "status": "ok",
         "message": "Signed in with Google.",
         "is_new_user": is_new_user,
+        "subscription_enabled": subscription_enabled,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
@@ -506,8 +556,18 @@ def me():
             "logged_in": False
         })
 
+    subscriber = eventsdb.get_subscriber(
+        user["email"]
+    )
+
+    subscription_enabled = bool(
+        subscriber
+        and subscriber.get("notifications_enabled")
+    )
+
     return jsonify({
         "logged_in": True,
+        "subscription_enabled": subscription_enabled,
         "user": {
             "user_id": user["user_id"],
             "email": user["email"],
@@ -650,70 +710,46 @@ def logout():
 
 @app.route("/api/subscribe", methods=["POST"])
 def subscribe():
-
     """
-    Subscribe a student to Campus Compass daily event emails.
-
-    Body:
-
-    {
-        "email": "student@example.com",
-        "year": "sophomore",
-        "major": "Computer Science",
-        "interests": ["Transfer", "Career"]
-    }
+    Subscribe the currently logged-in Campus Compass user
+    to daily event emails.
     """
 
-    data = request.get_json(
-        force=True
-    ) or {}
+    # Must be logged in
+    if "email" not in session:
+        return jsonify({
+            "error": "Please sign in before subscribing."
+        }), 401
 
+    data = request.get_json(silent=True) or {}
 
-    email = (
-        data.get("email")
-        or ""
+    # IMPORTANT:
+    # Never trust an email sent from the browser.
+    # Always use the logged-in account email.
+    email = str(
+        session["email"]
     ).strip().lower()
 
-
-    year = (
-        data.get("year")
-        or ""
+    year = str(
+        data.get("year") or ""
     ).strip()
 
-
-    major = (
-        data.get("major")
-        or ""
+    major = str(
+        data.get("major") or ""
     ).strip()
-
 
     interests = (
         data.get("interests")
         or []
     )
 
-
-    # -------------------------
-    # Validate email
-    # -------------------------
-
-    if not EMAIL_PATTERN.match(email):
-
-        return jsonify({
-            "error": "Please enter a valid email address."
-        }), 400
-
-
-
     if not isinstance(interests, list):
-
         return jsonify({
             "error": "Interests must be a list."
         }), 400
 
-
+    # Save subscription
     try:
-
         eventsdb.save_subscriber(
             email=email,
             year=year,
@@ -722,7 +758,6 @@ def subscribe():
         )
 
     except Exception as e:
-
         print(
             f"[subscribe] database error: {e}"
         )
@@ -731,16 +766,48 @@ def subscribe():
             "error": "Could not save subscription."
         }), 500
 
-
     print(
         f"[subscribe] subscribed: {email}"
     )
 
+    # Send confirmation email through Brevo
+    email_sent = True
+
+    try:
+        send_brevo_email(
+            email,
+            "Campus Compass Daily Events activated",
+            """
+            <div style="font-family:Arial,sans-serif;line-height:1.6;">
+                <h2>Campus Compass</h2>
+                <p>Your Daily Event Email subscription is now active.</p>
+                <p>
+                    You'll receive personalized De Anza event
+                    recommendations from Campus Compass.
+                </p>
+                <p>Campus Compass</p>
+            </div>
+            """,
+            (
+                "Campus Compass\n\n"
+                "Your Daily Event Email subscription is now active.\n"
+                "You'll receive personalized De Anza event "
+                "recommendations from Campus Compass."
+            ),
+        )
+
+    except Exception as e:
+        email_sent = False
+
+        print(
+            f"[subscribe] Brevo email error: {e}"
+        )
 
     return jsonify({
         "status": "ok",
         "message": "Subscribed successfully.",
         "email": email,
+        "confirmation_email_sent": email_sent,
     })
 
 

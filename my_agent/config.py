@@ -117,6 +117,21 @@ SMTP_HOST = _env("CAMPUS_COMPASS_SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(_env("CAMPUS_COMPASS_SMTP_PORT", "465"))
 
 
+BREVO_API_KEY = _env("BREVO_API_KEY")
+BREVO_SENDER_EMAIL = _env("BREVO_SENDER_EMAIL", "campuscompass.notify@gmail.com")
+BREVO_SENDER_NAME = _env("BREVO_SENDER_NAME", "Campus Compass")
+
+
+DAILY_EMAIL_TIME = _env(
+    "DAILY_EMAIL_TIME",
+    "09:00",
+)
+
+DAILY_EMAIL_TIMEZONE = _env(
+    "DAILY_EMAIL_TIMEZONE",
+    "America/Los_Angeles",
+)
+
 # ---------------------------------------------------------
 # Password reset
 # ---------------------------------------------------------
